@@ -2,6 +2,9 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAudioStore } from '../../stores/audioStore';
 import { api } from '../../lib/api';
 import Waveform from '../tracks/Waveform';
+import Avatar from '../common/Avatar';
+
+type Member = { userId: string; displayName: string; avatarUrl: string | null };
 
 /* ── Drop zone for uploading audio files ── */
 export function ArrangementDropZone({ projectId, onFilesAdded, children }: { projectId: string; onFilesAdded: () => void; children: React.ReactNode }) {
@@ -63,12 +66,15 @@ export function ArrangementPlayhead() {
 }
 
 /* ── Single clip in a lane ── */
-function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth, clipIndex, totalClips }: {
-  track: any; selectedProjectId: string; deleteTrack: any; trackZoom: 'full' | 'half'; laneWidth: number; clipIndex: number; totalClips: number;
+function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth, clipIndex, totalClips, members }: {
+  track: any; selectedProjectId: string; deleteTrack: any; trackZoom: 'full' | 'half'; laneWidth: number; clipIndex: number; totalClips: number; members: Member[];
 }) {
   const clipWidth = totalClips > 0 ? 100 / totalClips : 100;
   const leftPct = clipIndex * clipWidth;
   const height = trackZoom === 'half' ? 48 : 70;
+  const owner = members.find((m) => m.userId === track.ownerId);
+  const ownerName = owner?.displayName || track.ownerName || 'Unknown';
+  const displayName = (track.name || 'Track').replace(/\.(wav|mp3|flac|aiff|ogg|m4a)$/i, '').replace(/_/g, ' ');
 
   return (
     <div
@@ -83,9 +89,12 @@ function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth,
         trackId={track.id}
         showPlayhead={true}
       />
-      {/* Track name */}
-      <div className="absolute left-2 top-1 z-10 pointer-events-none">
-        <p className="text-[10px] font-bold text-white/70 truncate max-w-[120px]">{track.name || 'Track'}</p>
+      {/* Track name + uploader avatar */}
+      <div className="absolute left-2 top-1 z-10 pointer-events-none flex flex-col gap-1 items-start">
+        <p className="text-[10px] font-bold text-white/70 truncate max-w-[120px]">{displayName}</p>
+        <div title={`Added by ${ownerName}`} className="shrink-0">
+          <Avatar name={ownerName} src={owner?.avatarUrl || null} size="xs" />
+        </div>
       </div>
       {/* Hover controls */}
       <div className="absolute top-1/2 -translate-y-1/2 right-1 z-20 flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity rounded overflow-hidden" style={{ background: 'rgba(0,0,0,0.7)' }}>
@@ -122,13 +131,14 @@ function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth,
 }
 
 /* ── Track lanes with horizontal clips ── */
-export function DraggableTrackList({ tracks, selectedProjectId, deleteTrack, updateTrack, trackZoom, fetchProject }: {
+export function DraggableTrackList({ tracks, selectedProjectId, deleteTrack, updateTrack, trackZoom, fetchProject, members = [] }: {
   tracks: any[];
   selectedProjectId: string;
   deleteTrack: any;
   updateTrack: any;
   trackZoom: 'full' | 'half';
   fetchProject: any;
+  members?: Member[];
 }) {
   const bufferVersion = useAudioStore((s) => s.bufferVersion);
 
@@ -180,6 +190,7 @@ export function DraggableTrackList({ tracks, selectedProjectId, deleteTrack, upd
               laneWidth={100}
               clipIndex={idx}
               totalClips={laneTracks.length}
+              members={members}
             />
           ))}
         </div>

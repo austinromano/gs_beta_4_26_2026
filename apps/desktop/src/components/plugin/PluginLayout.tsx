@@ -619,7 +619,7 @@ export default function PluginLayout() {
                       <ArrangementScrollView showAll={showAllBars}>
                       <BarRuler />
                       <FullMixDropZone projectId={selectedProjectId!} onFilesAdded={() => fetchProject(selectedProjectId!)} isBeat={isBeatView} compact={trackZoom === 'half'} />
-                      <DraggableTrackList tracks={currentProject.tracks} selectedProjectId={selectedProjectId!} deleteTrack={deleteTrack} updateTrack={updateTrack} trackZoom={trackZoom} fetchProject={fetchProject} />
+                      <DraggableTrackList tracks={currentProject.tracks} selectedProjectId={selectedProjectId!} deleteTrack={deleteTrack} updateTrack={updateTrack} trackZoom={trackZoom} fetchProject={fetchProject} members={members} />
                       <ArrangementPlayhead />
                       </ArrangementScrollView>
                     </ArrangementDropZone>
