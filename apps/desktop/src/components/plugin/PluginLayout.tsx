@@ -580,11 +580,18 @@ export default function PluginLayout() {
                       <button
                         onClick={() => {
                           if (!currentProject?.tracks) return;
+                          // Dedupe by fileId so duplicated tracks don't produce
+                          // the same audio file twice in the export.
+                          const seen = new Set<string>();
                           const items = currentProject.tracks
-                            .filter((t: any) => t.fileId)
+                            .filter((t: any) => {
+                              if (!t.fileId || seen.has(t.fileId)) return false;
+                              seen.add(t.fileId);
+                              return true;
+                            })
                             .map((t: any) => ({
                               url: api.getDirectDownloadUrl(selectedProjectId!, t.fileId),
-                              name: (t.name || 'stem') + '.wav',
+                              name: (t.name || 'stem').replace(/ \(copy\)$/i, '') + '.wav',
                             }));
                           if (items.length === 0) return;
                           // Set global variable for C++ timer to pick up
