@@ -2,8 +2,8 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { HTTPException } from 'hono/http-exception';
 import { db } from '../db/index.js';
-import { projects, projectMembers, tracks, users, invitations, chatMessages, follows } from '../db/schema.js';
-import { eq, or, and, desc, like } from 'drizzle-orm';
+import { projects, projectMembers, tracks, users, invitations, chatMessages, follows, files } from '../db/schema.js';
+import { eq, or, and, desc, like, inArray } from 'drizzle-orm';
 import { authMiddleware, type AuthUser } from '../middleware/auth.js';
 import { createAutoSnapshot } from '../lib/autoSnapshot.js';
 import { postActivityComment } from '../lib/activityComment.js';
@@ -99,7 +99,24 @@ projectRoutes.get('/:id', async (c) => {
     .orderBy(tracks.position)
     .all();
 
-  return c.json({ success: true, data: { ...project, members, tracks: projectTracks } });
+  // Fetch peaks for all file-backed tracks in one query and attach inline,
+  // so the client can render waveforms immediately with no extra round trips.
+  const fileIds = Array.from(new Set(projectTracks.map((t) => t.fileId).filter((id): id is string => !!id)));
+  let peaksByFileId = new Map<string, any>();
+  if (fileIds.length > 0) {
+    const rows = await db.select({ id: files.id, peaks: files.peaks }).from(files).where(inArray(files.id, fileIds)).all();
+    for (const r of rows) {
+      if (r.peaks) {
+        try { peaksByFileId.set(r.id, JSON.parse(r.peaks)); } catch {}
+      }
+    }
+  }
+  const tracksWithPeaks = projectTracks.map((t) => ({
+    ...t,
+    peaks: t.fileId ? peaksByFileId.get(t.fileId) || null : null,
+  }));
+
+  return c.json({ success: true, data: { ...project, members, tracks: tracksWithPeaks } });
 });
 
 projectRoutes.patch('/:id', async (c) => {

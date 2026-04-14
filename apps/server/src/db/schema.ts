@@ -103,6 +103,7 @@ export const files = sqliteTable('files', {
   fileSize: integer('file_size').notNull(),
   mimeType: text('mime_type').notNull(),
   s3Key: text('s3_key').notNull(),
+  peaks: text('peaks'),
   createdAt: timestamp('created_at').notNull(),
 });
 

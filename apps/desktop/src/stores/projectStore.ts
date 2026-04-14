@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Project, ProjectDetail, Track, Version } from '@ghost/types';
 import { api } from '../lib/api';
+import { peaksCache } from '../lib/audio';
 
 interface ProjectState {
   projects: Project[];
@@ -36,6 +37,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   fetchProject: async (id) => {
     set({ loading: true });
     const project = await api.getProject(id);
+    // Seed the peaks cache from the inline peaks that came back with the
+    // project detail. Waveform components will render immediately from
+    // these without hitting the network.
+    if (project?.tracks) {
+      for (const t of project.tracks as any[]) {
+        if (t.fileId && t.peaks) peaksCache.set(t.fileId, t.peaks);
+      }
+    }
     set({ currentProject: project, loading: false });
   },
 

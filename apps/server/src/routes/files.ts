@@ -76,10 +76,21 @@ fileRoutes.post('/upload', async (c) => {
     await fsp.writeFile(s3Key, buffer);
   }
 
+  // Pre-compute peaks at upload time so project loads can include them
+  // inline with zero extra round trips. Non-WAV uploads just skip this.
+  let peaksJson: string | null = null;
+  try {
+    const parsed = parseWavPeaks(buffer, 1024);
+    peaksJson = JSON.stringify(parsed);
+    setCachedPeaks(`${fileId}:1024`, parsed);
+  } catch {
+    peaksJson = null;
+  }
+
   await db.insert(files).values({
     id: fileId, projectId, uploadedBy: user.id,
     fileName: file.name, fileSize: file.size, mimeType,
-    s3Key, createdAt: new Date().toISOString(),
+    s3Key, peaks: peaksJson, createdAt: new Date().toISOString(),
   }).run();
 
   return c.json({ success: true, data: { fileId, fileName: file.name } });
@@ -145,6 +156,18 @@ fileRoutes.get('/:fileId/peaks', async (c) => {
   const [file] = await db.select().from(files).where(eq(files.id, fileId)).limit(1).all();
   if (!file) throw new HTTPException(404, { message: 'File not found' });
 
+  // DB-persisted peaks (from upload time) — fastest path.
+  if (file.peaks) {
+    try {
+      const parsed = JSON.parse(file.peaks);
+      setCachedPeaks(cacheKey, parsed);
+      c.header('Cache-Control', 'public, max-age=31536000, immutable');
+      return c.json(parsed);
+    } catch {
+      // fall through to regeneration
+    }
+  }
+
   let buf: Buffer;
   try {
     const isS3Path = file.s3Key.startsWith('projects/');
@@ -174,6 +197,10 @@ fileRoutes.get('/:fileId/peaks', async (c) => {
   try {
     const data = parseWavPeaks(buf, bins);
     setCachedPeaks(cacheKey, data);
+    // Backfill: persist to DB so future reads skip the WAV parse entirely.
+    if (bins === 1024) {
+      try { await db.update(files).set({ peaks: JSON.stringify(data) }).where(eq(files.id, fileId)).run(); } catch {}
+    }
     c.header('Cache-Control', 'public, max-age=31536000, immutable');
     return c.json(data);
   } catch {

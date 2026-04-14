@@ -184,6 +184,7 @@ export async function initDatabase() {
     `ALTER TABLE projects ADD COLUMN project_type TEXT DEFAULT 'project'`,
     `ALTER TABLE users ADD COLUMN avatar_data TEXT`,
     `ALTER TABLE users ADD COLUMN avatar_mime TEXT`,
+    `ALTER TABLE files ADD COLUMN peaks TEXT`,
   ];
   for (const m of migrations) {
     try { await client.execute(m); } catch {}
