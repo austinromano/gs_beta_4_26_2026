@@ -52,13 +52,11 @@ export default function WelcomeHero({ userName, hasProjects, onCreateProject, on
         <h1 className="text-[28px] font-bold text-white mb-2 tracking-tight">{heading}</h1>
         <p className="text-[15px] text-white/60 mb-10 max-w-md mx-auto">{subheading}</p>
 
-        {!hasProjects && (
-          <div className="grid grid-cols-3 gap-3 mb-10 text-left">
-            <Step number={1} title="Create a session" body="Start a new project or beat. Invite collaborators by email." />
-            <Step number={2} title="Drop stems" body="Upload mix or individual stems. Everyone hears changes live." />
-            <Step number={3} title="Drag into your DAW" body="Pull any stem from the plugin straight into Ableton." />
-          </div>
-        )}
+        <div className="grid grid-cols-3 gap-3 mb-10 text-left">
+          <Step number={1} title="Create a session" body="Start a new project or beat. Invite collaborators by email." />
+          <Step number={2} title="Drop stems" body="Upload mix or individual stems. Everyone hears changes live." />
+          <Step number={3} title="Drag into your DAW" body="Pull any stem from the plugin straight into Ableton." />
+        </div>
 
         <div className="flex flex-wrap items-center justify-center gap-3">
           <PrimaryCTA onClick={onCreateProject} label="Create your first project" />
@@ -66,11 +64,9 @@ export default function WelcomeHero({ userName, hasProjects, onCreateProject, on
           <SecondaryCTA onClick={onExploreFeed} label="Explore the feed" />
         </div>
 
-        {!hasProjects && (
-          <p className="text-[12px] text-white/30 mt-8">
-            Tip: you can also drag an audio file anywhere in the app to create a new project.
-          </p>
-        )}
+        <p className="text-[12px] text-white/30 mt-8">
+          Tip: you can also drag an audio file anywhere in the app to create a new project.
+        </p>
       </div>
     </motion.div>
   );
