@@ -29,23 +29,7 @@ export default function WelcomeHero({ userName, hasProjects, onCreateProject, on
     : 'Produce with other artists in real time — inside your DAW.';
 
   return (
-    <div className="relative flex-1 flex items-center justify-center px-8 overflow-hidden glass glass-glow rounded-2xl">
-      {/* Ambient glow orbs — kept subtle so the surface still reads as one with the rest of the app */}
-      <motion.div
-        aria-hidden
-        className="pointer-events-none absolute -top-32 -left-32 w-[420px] h-[420px] rounded-full blur-[140px]"
-        style={{ background: 'radial-gradient(circle, rgba(0,255,200,0.08) 0%, rgba(0,255,200,0) 70%)' }}
-        animate={{ x: [0, 30, 0], y: [0, -15, 0] }}
-        transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }}
-      />
-      <motion.div
-        aria-hidden
-        className="pointer-events-none absolute -bottom-36 -right-32 w-[440px] h-[440px] rounded-full blur-[160px]"
-        style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.1) 0%, rgba(124,58,237,0) 70%)' }}
-        animate={{ x: [0, -24, 0], y: [0, 24, 0] }}
-        transition={{ duration: 16, repeat: Infinity, ease: 'easeInOut' }}
-      />
-
+    <div className="relative flex-1 flex items-center justify-center px-8 overflow-hidden">
       <motion.div
         variants={container}
         initial="hidden"
