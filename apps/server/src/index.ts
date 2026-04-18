@@ -75,6 +75,21 @@ app.route('/api/v1/social', socialRoutes);
 
 // Serve the desktop app build
 import { serveStatic } from '@hono/node-server/serve-static';
+
+// Cache policy: hashed assets are immutable (safe to cache for a year);
+// index.html must not be cached so new deploys are picked up immediately.
+app.use('*', async (c, next) => {
+  await next();
+  const path = new URL(c.req.url).pathname;
+  if (path.endsWith('.html') || path === '/' || path === '/app') {
+    c.res.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    c.res.headers.set('Pragma', 'no-cache');
+    c.res.headers.set('Expires', '0');
+  } else if (path.startsWith('/assets/') || path.match(/\.(js|css|woff2?|png|jpg|svg|ico)$/i)) {
+    c.res.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  }
+});
+
 // Try local public folder first (Railway), then ../desktop/dist (local dev)
 app.use('/app/*', serveStatic({ root: './public', rewriteRequestPath: (p) => p.replace('/app', '') }));
 app.use('/app/*', serveStatic({ root: '../desktop/dist', rewriteRequestPath: (p) => p.replace('/app', '') }));
