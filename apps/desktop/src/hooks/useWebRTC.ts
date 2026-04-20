@@ -227,18 +227,32 @@ export function useWebRTC(projectId: string | null, userId: string | null) {
       }
     };
 
+    // When someone new joins the room, re-offer any stream we're currently
+    // publishing so they can see it immediately without us toggling.
+    const handleUserJoined = async ({ userId: joinedUserId }: { userId: string; displayName: string; colour: string; avatarUrl?: string | null }) => {
+      if (joinedUserId === userId) return;
+      if (localStreamRef.current) {
+        try { await callUser(joinedUserId, 'camera'); } catch (err) { if (import.meta.env.DEV) console.warn('[useWebRTC] re-offer camera failed:', err); }
+      }
+      if (localScreenRef.current) {
+        try { await callUser(joinedUserId, 'screen'); } catch (err) { if (import.meta.env.DEV) console.warn('[useWebRTC] re-offer screen failed:', err); }
+      }
+    };
+
     socket.on('webrtc-offer', handleOffer);
     socket.on('webrtc-answer', handleAnswer);
     socket.on('webrtc-ice-candidate', handleIceCandidate);
     socket.on('webrtc-user-left', handleUserLeft);
+    socket.on('user-joined', handleUserJoined);
 
     return () => {
       socket.off('webrtc-offer', handleOffer);
       socket.off('webrtc-answer', handleAnswer);
       socket.off('webrtc-ice-candidate', handleIceCandidate);
       socket.off('webrtc-user-left', handleUserLeft);
+      socket.off('user-joined', handleUserJoined);
     };
-  }, [projectId, createPeer, closePeer]);
+  }, [projectId, createPeer, closePeer, callUser, userId]);
 
   useEffect(() => {
     return () => {
