@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAudioStore } from '../../stores/audioStore';
 import { api } from '../../lib/api';
+import { snapToBar } from '../../lib/audio';
 import Waveform from '../tracks/Waveform';
 import Avatar from '../common/Avatar';
 
@@ -154,16 +155,19 @@ export function ArrangementPlayhead() {
 function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth, clipIndex, totalClips, members }: {
   track: any; selectedProjectId: string; deleteTrack: any; trackZoom: 'full' | 'half'; laneWidth: number; clipIndex: number; totalClips: number; members: Member[];
 }) {
-  const { arrangementDur } = useArrangement();
+  const { arrangementDur, bpm } = useArrangement();
   const startOffset = useAudioStore((s) => s.loadedTracks.get(track.id)?.startOffset ?? 0);
   const clipDur = useAudioStore((s) => s.loadedTracks.get(track.id)?.buffer?.duration ?? 0);
+  const setTrackOffset = useAudioStore((s) => s.setTrackOffset);
+  const [dragOffset, setDragOffset] = useState<number | null>(null);
 
   // Prefer time-axis positioning once the buffer has loaded; fall back to the
   // legacy side-by-side layout so clips don't collapse to zero width while the
   // audio is still decoding.
   const haveTime = clipDur > 0 && arrangementDur > 0;
+  const effectiveOffset = dragOffset !== null ? dragOffset : startOffset;
   const leftPct = haveTime
-    ? (startOffset / arrangementDur) * 100
+    ? (effectiveOffset / arrangementDur) * 100
     : clipIndex * (100 / Math.max(1, totalClips));
   const clipWidth = haveTime
     ? (clipDur / arrangementDur) * 100
@@ -173,10 +177,53 @@ function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth,
   const ownerName = owner?.displayName || track.ownerName || 'Unknown';
   const displayName = (track.name || 'Track').replace(/\.(wav|mp3|flac|aiff|ogg|m4a)$/i, '').replace(/_/g, ' ');
 
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Don't start a drag if the user clicked on one of the hover controls.
+    if ((e.target as HTMLElement).closest('button')) return;
+    if (!haveTime) return;
+    const clipEl = e.currentTarget;
+    const laneEl = clipEl.parentElement;
+    if (!laneEl) return;
+
+    e.preventDefault();
+    const startX = e.clientX;
+    const laneWidthPx = laneEl.clientWidth;
+    const initialOffset = startOffset;
+    let liveOffset = initialOffset;
+
+    const handleMove = (ev: PointerEvent) => {
+      const deltaX = ev.clientX - startX;
+      const deltaTime = (deltaX / laneWidthPx) * arrangementDur;
+      liveOffset = Math.max(0, initialOffset + deltaTime);
+      setDragOffset(liveOffset);
+    };
+    const handleUp = () => {
+      // Commit: snap the final position to the nearest bar.
+      const snapped = Math.max(0, snapToBar(liveOffset, bpm, 'nearest'));
+      setDragOffset(null);
+      if (Math.abs(snapped - initialOffset) > 0.001) {
+        setTrackOffset(track.id, snapped);
+      }
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+  };
+
   return (
     <div
-      className="absolute top-1 bottom-1 group rounded-lg overflow-hidden"
-      style={{ left: `${leftPct}%`, width: `${clipWidth}%`, background: '#0A0412', border: '1px solid rgba(255,255,255,0.08)' }}
+      onPointerDown={handlePointerDown}
+      className={`absolute top-1 bottom-1 group rounded-lg overflow-hidden ${haveTime ? 'cursor-grab active:cursor-grabbing' : ''}`}
+      style={{
+        left: `${leftPct}%`,
+        width: `${clipWidth}%`,
+        background: '#0A0412',
+        border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: dragOffset !== null ? '0 0 0 1px rgba(168,85,247,0.6), 0 4px 16px rgba(124,58,237,0.3)' : undefined,
+        zIndex: dragOffset !== null ? 10 : undefined,
+        userSelect: 'none',
+      }}
     >
       <Waveform
         seed={track.name + (track.type || 'audio')}
@@ -258,7 +305,9 @@ export function DraggableTrackList({ tracks, selectedProjectId, deleteTrack, upd
     return acc;
   }, new Map<string, any[]>());
 
-  // Set startOffsets for clips in each lane so they play sequentially
+  // Seed startOffsets for never-positioned duplicate clips so they land side
+  // by side on first load. Skip clips whose offset has already been set —
+  // otherwise this would stomp on user drags every re-render.
   useEffect(() => {
     lanes.forEach((laneTracks) => {
       if (laneTracks.length <= 1) return;
@@ -266,11 +315,9 @@ export function DraggableTrackList({ tracks, selectedProjectId, deleteTrack, upd
       if (!firstBuffer) return;
       const clipDur = firstBuffer.duration;
       laneTracks.forEach((t: any, idx: number) => {
+        if (idx === 0) return;
         const current = loadedTracks.get(t.id)?.startOffset ?? 0;
-        const expected = idx * clipDur;
-        if (Math.abs(current - expected) > 0.01) {
-          setTrackOffset(t.id, expected);
-        }
+        if (current === 0) setTrackOffset(t.id, idx * clipDur);
       });
     });
   }, [tracks.length, bufferVersion]);
