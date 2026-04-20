@@ -296,6 +296,10 @@ export function DraggableTrackList({ tracks, selectedProjectId, deleteTrack, upd
 
   const loadedTracks = useAudioStore((s) => s.loadedTracks);
   const setTrackOffset = useAudioStore((s) => s.setTrackOffset);
+  // Tracks we've already seeded an initial offset for. Prevents re-seeding
+  // after the user drags a clip, and also prevents double-seeding if the
+  // effect fires repeatedly while a newly-duplicated track is decoding.
+  const seededRef = useRef<Set<string>>(new Set());
 
   // Group tracks by fileId — same file = same lane, clips side by side
   const lanes = tracks.reduce((acc: Map<string, any[]>, track: any) => {
@@ -306,8 +310,9 @@ export function DraggableTrackList({ tracks, selectedProjectId, deleteTrack, upd
   }, new Map<string, any[]>());
 
   // Seed startOffsets for never-positioned duplicate clips so they land side
-  // by side on first load. Skip clips whose offset has already been set —
-  // otherwise this would stomp on user drags every re-render.
+  // by side on first load. Runs on every loadedTracks change so late-arriving
+  // tracks still get their offset seeded — once seededRef has the id, we
+  // stop touching it so drags survive.
   useEffect(() => {
     lanes.forEach((laneTracks) => {
       if (laneTracks.length <= 1) return;
@@ -316,11 +321,22 @@ export function DraggableTrackList({ tracks, selectedProjectId, deleteTrack, upd
       const clipDur = firstBuffer.duration;
       laneTracks.forEach((t: any, idx: number) => {
         if (idx === 0) return;
-        const current = loadedTracks.get(t.id)?.startOffset ?? 0;
-        if (current === 0) setTrackOffset(t.id, idx * clipDur);
+        if (seededRef.current.has(t.id)) return;
+        const loaded = loadedTracks.get(t.id);
+        if (!loaded) return; // wait for load — don't mark as seeded yet
+        if (loaded.startOffset === 0) {
+          setTrackOffset(t.id, idx * clipDur);
+        }
+        seededRef.current.add(t.id);
       });
     });
-  }, [tracks.length, bufferVersion]);
+  }, [tracks.length, bufferVersion, loadedTracks]);
+
+  // When the project changes, forget what we've seeded so the new project
+  // starts clean.
+  useEffect(() => {
+    seededRef.current.clear();
+  }, [selectedProjectId]);
 
   const laneHeight = trackZoom === 'half' ? 50 : 72;
 
