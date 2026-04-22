@@ -114,10 +114,15 @@ export default function TransportBar({ tracks, projectId, projectTempo, onTempoC
 
   // Auto-save arrangement state on changes — writes localStorage (instant
   // cache) AND pushes to the server so collaborators receive it live.
+  // GATE: never save until the initial restore has applied. Otherwise the
+  // default-zero offsets from a fresh loadTrackFromBuffer would race the
+  // restore and POST an empty state to the server before we read the saved
+  // one back — which is how "my moves don't persist" happens.
   const bufferVersion = useAudioStore((s) => s.bufferVersion);
   const arrangeLoadedTracks = useAudioStore((s) => s.loadedTracks);
   useEffect(() => {
     if (!projectId || !tracks || arrangeLoadedTracks.size === 0) return;
+    if (restoredProjectIdRef.current !== projectId) return;
     const timer = setTimeout(async () => {
       const fileIdMap = new Map<string, string>();
       for (const t of tracks) {
@@ -143,6 +148,8 @@ export default function TransportBar({ tracks, projectId, projectTempo, onTempoC
     if (!projectId || !tracks) return;
     const flush = () => {
       if (useAudioStore.getState().loadedTracks.size === 0) return;
+      // Don't flush a stale pre-restore state back to the server.
+      if (restoredProjectIdRef.current !== projectId) return;
       const fileIdMap = new Map<string, string>();
       for (const t of tracks) {
         if (t.fileId) fileIdMap.set(t.id, t.fileId);
