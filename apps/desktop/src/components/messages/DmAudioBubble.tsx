@@ -9,9 +9,12 @@ interface Props {
   // Defaults to DM audio. Community rooms pass '/communities/audio' to hit
   // the community stream endpoint instead.
   audioPath?: string;
+  // Show the "add to DragStrip" download button. Defaults on for DMs,
+  // communities pass false so you can't extract audio shared with a room.
+  showDownload?: boolean;
 }
 
-export default function DmAudioBubble({ fileId, fileName, isOwn, audioPath = '/dm/audio' }: Props) {
+export default function DmAudioBubble({ fileId, fileName, isOwn, audioPath = '/dm/audio', showDownload = true }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bufferRef = useRef<AudioBuffer | null>(null);
@@ -170,7 +173,7 @@ export default function DmAudioBubble({ fileId, fileName, isOwn, audioPath = '/d
           {fileName} {ready && `· ${fmt(duration * (isPlaying ? progress : 1) || duration)}`}
         </div>
       </div>
-      {ready && (
+      {ready && showDownload && (
         <button
           title="Add to DragStrip"
           onClick={(e) => {

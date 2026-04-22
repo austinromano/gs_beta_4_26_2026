@@ -155,6 +155,7 @@ export default function CommunityRoomView() {
                         fileName={msg.audioFileName || 'audio.wav'}
                         isOwn={isOwn}
                         audioPath="/communities/audio"
+                        showDownload={false}
                       />
                       {isOwn && !msg.text && (
                         <button
