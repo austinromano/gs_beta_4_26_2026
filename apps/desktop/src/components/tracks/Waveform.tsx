@@ -145,9 +145,10 @@ export default memo(function Waveform({
     const scalePeak = mid * 0.9;
     const scaleRms = mid * 1.7; // amplify RMS — it's always smaller than peak
 
-    // Pick a per-clip hue from the Ghost brand palette. Hash a stable id so the
-    // same clip gets the same colour on every client and across reloads.
-    const idKey = trackId || fileId || seed;
+    // Pick a per-lane hue from the Ghost brand palette. Lanes are grouped by
+    // fileId upstream, so hashing fileId first keeps every duplicate/split of
+    // the same source clip in the same colour as the original.
+    const idKey = fileId || trackId || seed;
     let hh = 0;
     for (let i = 0; i < idKey.length; i++) hh = ((hh << 5) - hh + idKey.charCodeAt(i)) | 0;
     const palette = [270, 165, 300, 220, 190, 330]; // purple, teal, violet, blue, cyan, pink
