@@ -74,6 +74,12 @@ export default function TransportBar({ tracks, projectId, projectTempo, onTempoC
       restoredProjectIdRef.current = null;
       lastAppliedServerRef.current = null;
       lastSentServerRef.current = null;
+      // Clear loadedRef too — otherwise tryLoad's "already loaded" dedup
+      // guard skips every track forever when re-clicking the same project
+      // (projectId unchanged, so the projectId-keyed clear effect never fires).
+      // Without this the audio store never repopulates, seeder runs with
+      // defaults, and the saved arrangement appears to vanish.
+      loadedRef.current.clear();
     }
     lastLoadedSizeRef.current = loadedSize;
   }, [loadedSize]);
