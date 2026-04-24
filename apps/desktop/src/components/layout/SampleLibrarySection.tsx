@@ -33,35 +33,84 @@ export default function SampleLibrarySection() {
     return /\.(wav|mp3|flac|aiff|ogg|m4a|aac)$/i.test(f.name);
   };
 
-  // Walk DataTransferItemList for webkitGetAsEntry so dropping a whole folder
-  // pulls every audio file inside it, not just the top entry the browser picks.
-  const collectAudioFiles = async (items: DataTransferItemList | null, fallbackFiles: FileList | null): Promise<File[]> => {
+  // Recursively collect audio files under a directory entry.
+  const collectFilesInDirectory = async (dirEntry: any): Promise<File[]> => {
     const out: File[] = [];
-    const walkEntry = async (entry: any): Promise<void> => {
-      if (!entry) return;
-      if (entry.isFile) {
-        await new Promise<void>((resolve) => {
-          entry.file((file: File) => { if (isAudio(file)) out.push(file); resolve(); });
-        });
-      } else if (entry.isDirectory) {
-        const reader = entry.createReader();
-        const readBatch = () => new Promise<any[]>((resolve) => reader.readEntries((entries: any[]) => resolve(entries)));
-        let batch: any[] = [];
-        do {
-          batch = await readBatch();
-          for (const e of batch) await walkEntry(e);
-        } while (batch.length > 0);
+    const reader = dirEntry.createReader();
+    const readBatch = () => new Promise<any[]>((resolve) => reader.readEntries((entries: any[]) => resolve(entries)));
+    let batch: any[] = [];
+    do {
+      batch = await readBatch();
+      for (const e of batch) {
+        if (e.isFile) {
+          await new Promise<void>((resolve) => {
+            e.file((file: File) => { if (isAudio(file)) out.push(file); resolve(); });
+          });
+        } else if (e.isDirectory) {
+          const sub = await collectFilesInDirectory(e);
+          out.push(...sub);
+        }
       }
+    } while (batch.length > 0);
+    return out;
+  };
+
+  // Walk the drop. If a target folder is given, every audio file lands there
+  // (flattened). If dropping onto root, each top-level directory in the drop
+  // becomes (or reuses) a matching library folder and its audio files go
+  // inside it. Loose files at the root of the drop land at library root.
+  const processDrop = async (
+    items: DataTransferItemList | null,
+    fallbackFiles: FileList | null,
+    targetFolderId: string | null,
+  ): Promise<{ folderId: string | null; file: File }[]> => {
+    const results: { folderId: string | null; file: File }[] = [];
+    // Folders we create mid-drop so a drop with multiple same-named roots
+    // doesn't double-create.
+    const justCreated = new Map<string, string>();
+
+    const resolveFolderId = async (name: string): Promise<string | null> => {
+      if (justCreated.has(name)) return justCreated.get(name)!;
+      const existing = folders.find((f) => f.name === name);
+      if (existing) return existing.id;
+      const created = await createFolder(name);
+      if (created) {
+        justCreated.set(name, created.id);
+        return created.id;
+      }
+      return null;
     };
+
     if (items && items.length > 0 && typeof (items[0] as any).webkitGetAsEntry === 'function') {
+      // Snapshot entries first — DataTransferItemList is invalidated after
+      // the handler returns, and our awaits push it past that boundary.
+      const entries: any[] = [];
       for (let i = 0; i < items.length; i++) {
         const entry = (items[i] as any).webkitGetAsEntry?.();
-        if (entry) await walkEntry(entry);
+        if (entry) entries.push(entry);
+      }
+      for (const entry of entries) {
+        if (entry.isFile) {
+          await new Promise<void>((resolve) => {
+            entry.file((file: File) => {
+              if (isAudio(file)) results.push({ folderId: targetFolderId, file });
+              resolve();
+            });
+          });
+        } else if (entry.isDirectory) {
+          // Dropping onto an existing folder flattens; dropping onto root
+          // makes the directory become a new library folder.
+          const destFolderId = targetFolderId ?? await resolveFolderId(entry.name);
+          const inside = await collectFilesInDirectory(entry);
+          for (const f of inside) results.push({ folderId: destFolderId, file: f });
+        }
       }
     } else if (fallbackFiles) {
-      for (const f of Array.from(fallbackFiles)) if (isAudio(f)) out.push(f);
+      for (const f of Array.from(fallbackFiles)) {
+        if (isAudio(f)) results.push({ folderId: targetFolderId, file: f });
+      }
     }
-    return out;
+    return results;
   };
 
   const handleDropOnto = async (e: React.DragEvent, folderId: string | null) => {
@@ -69,11 +118,12 @@ export default function SampleLibrarySection() {
     e.stopPropagation();
     setRootDragOver(false);
     setDragFolderId(null);
-    const list = await collectAudioFiles(e.dataTransfer.items || null, e.dataTransfer.files);
-    if (list.length === 0) return;
+    const items = e.dataTransfer.items;
+    const files = e.dataTransfer.files;
     setUploading(true);
-    for (const f of list) {
-      await uploadFile(f, folderId);
+    const list = await processDrop(items, files, folderId);
+    for (const { folderId: destId, file } of list) {
+      await uploadFile(file, destId);
     }
     setUploading(false);
   };
