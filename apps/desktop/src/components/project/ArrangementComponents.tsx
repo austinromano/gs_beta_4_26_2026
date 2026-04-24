@@ -204,6 +204,17 @@ function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth,
   const { arrangementDur, bpm } = useArrangement();
   const startOffset = useAudioStore((s) => s.loadedTracks.get(track.id)?.startOffset ?? 0);
   const clipDur = useAudioStore((s) => s.loadedTracks.get(track.id)?.buffer?.duration ?? 0);
+  // Beat-aligned snap: firstBeatOffset tells us where inside the sample the
+  // first detected beat lives. We snap that position (not the sample's
+  // leading edge) to bar lines so kicks-with-lead-in hit the downbeat.
+  // Convert from the original buffer's timeline to the currently-playing
+  // (possibly stretched) timeline via the loaded track's stretch factor.
+  const beatAlignOffset = useAudioStore((s) => {
+    const t = s.loadedTracks.get(track.id);
+    if (!t?.firstBeatOffset || !t.originalBuffer) return 0;
+    const factor = t.originalBuffer.duration > 0 ? t.buffer.duration / t.originalBuffer.duration : 1;
+    return t.firstBeatOffset * factor;
+  });
   const setTrackOffset = useAudioStore((s) => s.setTrackOffset);
   const [dragOffset, setDragOffset] = useState<number | null>(null);
   // If a collaborator is currently dragging this clip, lock our own drag
@@ -257,7 +268,12 @@ function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth,
       }
     };
     const handleUp = () => {
-      const snapped = Math.max(0, snapToBar(liveOffset, bpm, 'nearest'));
+      // Snap the first DETECTED BEAT to the bar, not the sample's leading
+      // edge. For samples with lead-in silence this is the difference
+      // between "kinda lines up" and "locks into the groove."
+      const beatPos = liveOffset + beatAlignOffset;
+      const snappedBeatPos = snapToBar(beatPos, bpm, 'nearest');
+      const snapped = Math.max(0, snappedBeatPos - beatAlignOffset);
       setDragOffset(null);
       if (Math.abs(snapped - initialOffset) > 0.001) {
         setTrackOffset(track.id, snapped);

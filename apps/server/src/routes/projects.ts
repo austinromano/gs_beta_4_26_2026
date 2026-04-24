@@ -99,22 +99,40 @@ projectRoutes.get('/:id', async (c) => {
     .orderBy(tracks.position)
     .all();
 
-  // Fetch peaks for all file-backed tracks in one query and attach inline,
-  // so the client can render waveforms immediately with no extra round trips.
+  // Fetch peaks + BPM analysis for all file-backed tracks in one query and
+  // attach inline, so the client can render waveforms and time-stretch with
+  // no extra round trips.
   const fileIds = Array.from(new Set(projectTracks.map((t) => t.fileId).filter((id): id is string => !!id)));
-  let peaksByFileId = new Map<string, any>();
+  const fileMeta = new Map<string, { peaks: any; detectedBpm: number | null; bpmConfidence: number | null; firstBeatOffset: number | null }>();
   if (fileIds.length > 0) {
-    const rows = await db.select({ id: files.id, peaks: files.peaks }).from(files).where(inArray(files.id, fileIds)).all();
+    const rows = await db.select({
+      id: files.id, peaks: files.peaks,
+      detectedBpm: files.detectedBpm, bpmConfidence: files.bpmConfidence,
+      firstBeatOffset: files.firstBeatOffset,
+    }).from(files).where(inArray(files.id, fileIds)).all();
     for (const r of rows) {
+      let peaks = null;
       if (r.peaks) {
-        try { peaksByFileId.set(r.id, JSON.parse(r.peaks)); } catch { /* skip corrupt cached peaks */ }
+        try { peaks = JSON.parse(r.peaks); } catch { /* skip corrupt cached peaks */ }
       }
+      fileMeta.set(r.id, {
+        peaks,
+        detectedBpm: r.detectedBpm ?? null,
+        bpmConfidence: r.bpmConfidence ?? null,
+        firstBeatOffset: r.firstBeatOffset ?? null,
+      });
     }
   }
-  const tracksWithPeaks = projectTracks.map((t) => ({
-    ...t,
-    peaks: t.fileId ? peaksByFileId.get(t.fileId) || null : null,
-  }));
+  const tracksWithPeaks = projectTracks.map((t) => {
+    const meta = t.fileId ? fileMeta.get(t.fileId) : undefined;
+    return {
+      ...t,
+      peaks: meta?.peaks ?? null,
+      detectedBpm: meta?.detectedBpm ?? null,
+      bpmConfidence: meta?.bpmConfidence ?? null,
+      firstBeatOffset: meta?.firstBeatOffset ?? null,
+    };
+  });
 
   return c.json({ success: true, data: { ...project, members, tracks: tracksWithPeaks } });
 });

@@ -6,6 +6,33 @@ import { getCtx, getMaster, getAnalyser as getAnalyserNode, safeStop } from './a
 import { save as saveArrangement, load as loadArrangement } from './audio/arrangement';
 import { cloneBuffer, loopBufferToLength, splitBufferAt } from './audio/bufferOps';
 import type { LoadedTrack, UndoSnapshot } from './audio/types';
+import { timeStretch } from '../lib/stretch';
+
+/**
+ * Pick the playable buffer for a sample with a detected BPM at a given
+ * project BPM. Passes through (cheap, no DSP) when the two tempos agree or
+ * when we lack the data to stretch. Bypasses stretching entirely when the
+ * sample's detected confidence is sketchy — a bad detection is worse than
+ * no stretch.
+ */
+function stretchForProject(
+  originalBuffer: AudioBuffer,
+  detectedBpm: number | undefined,
+  projectBpm: number,
+): AudioBuffer {
+  if (!detectedBpm || detectedBpm <= 0 || projectBpm <= 0) return originalBuffer;
+  // factor < 1 speeds up the sample (when the project is faster than the
+  // sample), factor > 1 slows it down. Cap at 2x either way to keep WSOLA
+  // artifacts within reason.
+  const factor = detectedBpm / projectBpm;
+  if (factor < 0.5 || factor > 2) return originalBuffer;
+  if (Math.abs(factor - 1) < 0.005) return originalBuffer;
+  try {
+    return timeStretch(originalBuffer, factor, getCtx());
+  } catch {
+    return originalBuffer;
+  }
+}
 
 export function getAnalyser(): AnalyserNode | null {
   return getAnalyserNode();
@@ -33,9 +60,10 @@ interface AudioState {
   loadError: string | null;
 
   loadTrack: (trackId: string, fileId: string, projectId: string, trackBpm?: number) => Promise<void>;
-  loadTrackFromBuffer: (trackId: string, buffer: AudioBuffer, trackBpm?: number) => void;
+  loadTrackFromBuffer: (trackId: string, buffer: AudioBuffer, trackBpm?: number, detectedBpm?: number, firstBeatOffset?: number) => void;
   unloadTrack: (trackId: string) => void;
   setProjectBpm: (bpm: number) => void;
+  restretchAllTracks: () => void;
   setTrackBpm: (trackId: string, bpm: number) => void;
   play: () => void;
   pause: () => void;
@@ -259,20 +287,33 @@ export const useAudioStore = create<AudioState>((set, get) => {
       }
     },
 
-    loadTrackFromBuffer: (trackId, buffer, trackBpm = 0) => {
+    loadTrackFromBuffer: (trackId, buffer, trackBpm = 0, detectedBpm, firstBeatOffset) => {
       set((s) => {
         const m = new Map(s.loadedTracks);
         const existing = m.get(trackId);
         const pending = pendingTrackOffsets.get(trackId);
         if (pending !== undefined) pendingTrackOffsets.delete(trackId);
+
+        // Time-stretch to match the project's BPM when we have analysis.
+        // Keep the pristine buffer in `originalBuffer` so BPM changes can
+        // re-stretch from the source (stretching a stretched buffer degrades
+        // quality fast).
+        const projBpm = s.projectBpm;
+        const playBuffer = detectedBpm
+          ? stretchForProject(buffer, detectedBpm, projBpm)
+          : buffer;
+
         m.set(trackId, {
-          id: trackId, buffer, source: null, gainNode: null,
+          id: trackId, buffer: playBuffer, source: null, gainNode: null,
           volume: existing?.volume ?? 1, muted: existing?.muted ?? false,
           soloed: existing?.soloed ?? false, bpm: trackBpm || existing?.bpm || 0,
           pitch: existing?.pitch ?? 0,
           trimStart: existing?.trimStart ?? 0,
           trimEnd: existing?.trimEnd ?? 0,
           startOffset: existing?.startOffset ?? pending ?? 0,
+          originalBuffer: buffer,
+          detectedBpm,
+          firstBeatOffset,
         });
         return { loadedTracks: m };
       });
@@ -280,8 +321,30 @@ export const useAudioStore = create<AudioState>((set, get) => {
     },
 
     setProjectBpm: (bpm) => {
+      const { projectBpm: prev } = get();
       set({ projectBpm: bpm });
+      // Re-stretch every loaded track from its original buffer so samples
+      // stay locked to the new grid. Skip when the change is negligible.
+      if (prev > 0 && Math.abs(prev - bpm) > 0.1) {
+        get().restretchAllTracks();
+      }
       restartIfPlaying();
+    },
+
+    restretchAllTracks: () => {
+      const { loadedTracks, projectBpm } = get();
+      if (projectBpm <= 0) return;
+      const m = new Map(loadedTracks);
+      let changed = false;
+      m.forEach((track, id) => {
+        if (!track.originalBuffer || !track.detectedBpm) return;
+        const nextBuffer = stretchForProject(track.originalBuffer, track.detectedBpm, projectBpm);
+        if (nextBuffer !== track.buffer) {
+          m.set(id, { ...track, buffer: nextBuffer, source: null, gainNode: null });
+          changed = true;
+        }
+      });
+      if (changed) set({ loadedTracks: m, bufferVersion: get().bufferVersion + 1 });
     },
 
     setTrackBpm: (trackId, bpm) => {
