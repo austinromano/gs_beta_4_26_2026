@@ -96,7 +96,7 @@ export default function PluginLayout() {
   const [showSocial, setShowSocial] = useState(false);
   const [showMarketplace, setShowMarketplace] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
-  const [chatCollapsed, setChatCollapsed] = useState(() => localStorage.getItem('ghost_chat_collapsed') === '1');
+  const [chatCollapsed, setChatCollapsed] = useState(() => localStorage.getItem('ghost_chat_collapsed') !== '0');
   useEffect(() => {
     localStorage.setItem('ghost_chat_collapsed', chatCollapsed ? '1' : '0');
   }, [chatCollapsed]);
