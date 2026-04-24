@@ -96,6 +96,14 @@ export default function PluginLayout() {
   useEffect(() => {
     localStorage.setItem('ghost_sidebar_collapsed', sidebarCollapsed ? '1' : '0');
   }, [sidebarCollapsed]);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const raw = localStorage.getItem('ghost_sidebar_width');
+    const n = raw ? parseInt(raw, 10) : NaN;
+    return !isNaN(n) && n >= 180 && n <= 520 ? n : 210;
+  });
+  useEffect(() => {
+    localStorage.setItem('ghost_sidebar_width', String(sidebarWidth));
+  }, [sidebarWidth]);
   const [showSocial, setShowSocial] = useState(false);
   const [showMarketplace, setShowMarketplace] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
@@ -467,10 +475,13 @@ export default function PluginLayout() {
           style={{ paddingBottom: selectedProjectId && currentProject ? '48px' : '8px' }}
         >
           {/* Sidebar */}
-          <div className={`relative flex flex-col self-stretch ${sidebarCollapsed ? 'w-4 shrink-0' : 'w-[210px] shrink-0 glass glass-glow rounded-2xl pt-2 px-2'}`}>
+          <div
+            className={`relative flex flex-col self-stretch ${sidebarCollapsed ? 'w-4 shrink-0' : 'shrink-0 glass glass-glow rounded-2xl pt-2 px-2'}`}
+            style={sidebarCollapsed ? undefined : { width: sidebarWidth }}
+          >
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-5 h-10 flex items-center justify-center rounded-full glass hover:bg-white/[0.08] transition-colors"
+              className="absolute right-0 top-1/2 -translate-y-1/2 z-20 w-5 h-10 flex items-center justify-center rounded-full glass hover:bg-white/[0.08] transition-colors"
               title={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
             >
               <svg width="8" height="12" viewBox="0 0 8 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-ghost-text-muted">
@@ -478,21 +489,46 @@ export default function PluginLayout() {
               </svg>
             </button>
             {!sidebarCollapsed && (
-              <div className="flex-1 min-h-0 flex flex-col">
-                <ProjectListSidebar
-                  projects={projects.filter((p: any) => p.projectType !== 'beat')}
-                  allProjects={projects}
-                  selectedId={selectedProjectId}
-                  onSelect={selectProject}
-                  onCreate={handleCreate}
-                  onCreateBeat={handleCreateBeat}
-                  samplePacks={samplePackState.packs}
-                  selectedPackId={samplePackState.selectedPackId}
-                  onSelectPack={handleSelectPack}
-                  onCreatePack={handleCreatePack}
-                  friends={friends}
+              <>
+                {/* Resize handle — thin strip on the right edge. Sits under
+                    the collapse button so that button wins hit-testing at
+                    its hotspot. Drag horizontally to resize; width clamped
+                    to [180, 520] and persisted to localStorage. */}
+                <div
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    const startX = e.clientX;
+                    const startW = sidebarWidth;
+                    const onMove = (ev: PointerEvent) => {
+                      const next = Math.max(180, Math.min(520, startW + (ev.clientX - startX)));
+                      setSidebarWidth(next);
+                    };
+                    const onUp = () => {
+                      window.removeEventListener('pointermove', onMove);
+                      window.removeEventListener('pointerup', onUp);
+                    };
+                    window.addEventListener('pointermove', onMove);
+                    window.addEventListener('pointerup', onUp);
+                  }}
+                  className="absolute right-0 top-0 bottom-0 w-1.5 z-10 cursor-ew-resize hover:bg-ghost-green/30 transition-colors"
+                  title="Drag to resize"
                 />
-              </div>
+                <div className="flex-1 min-h-0 flex flex-col">
+                  <ProjectListSidebar
+                    projects={projects.filter((p: any) => p.projectType !== 'beat')}
+                    allProjects={projects}
+                    selectedId={selectedProjectId}
+                    onSelect={selectProject}
+                    onCreate={handleCreate}
+                    onCreateBeat={handleCreateBeat}
+                    samplePacks={samplePackState.packs}
+                    selectedPackId={samplePackState.selectedPackId}
+                    onSelectPack={handleSelectPack}
+                    onCreatePack={handleCreatePack}
+                    friends={friends}
+                  />
+                </div>
+              </>
             )}
           </div>
 
