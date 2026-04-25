@@ -239,6 +239,47 @@ function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth,
   const ownerName = owner?.displayName || track.ownerName || 'Unknown';
   const displayName = (track.name || 'Track').replace(/\.(wav|mp3|flac|aiff|ogg|m4a)$/i, '').replace(/_/g, ' ');
 
+  // Context-menu state (replaces the old hover-controls overlay). Opens at
+  // the cursor position on right-click; closes on any outside click or Esc.
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const onDown = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(null); };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
+
+  const duplicateClip = async () => {
+    if (!track.fileId) return;
+    const loaded = useAudioStore.getState().loadedTracks.get(track.id);
+    const clipDuration = loaded?.buffer?.duration || 0;
+    const currentOffset = loaded?.startOffset ?? 0;
+    const rawOffset = currentOffset + clipDuration;
+    const projectBpm = useAudioStore.getState().projectBpm || 120;
+    const newOffset = Math.max(0, snapToBar(rawOffset, projectBpm, 'nearest'));
+    const result = await api.addTrack(selectedProjectId, { name: (track.name || 'Track'), type: track.type || 'audio', fileId: track.fileId, fileName: track.name } as any);
+    if (result?.id) pendingTrackOffsets.set(result.id, newOffset);
+    window.dispatchEvent(new CustomEvent('ghost-refresh-project'));
+    window.dispatchEvent(new CustomEvent('ghost-save-arrangement'));
+  };
+
+  const deleteClip = () => {
+    useAudioStore.getState().removeTrack(track.id);
+    deleteTrack(selectedProjectId, track.id);
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (remoteDrag) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: e.clientX, y: e.clientY });
+  };
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest('button')) return;
     if (!haveTime) return;
@@ -320,6 +361,7 @@ function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth,
     )}
     <div
       onPointerDown={handlePointerDown}
+      onContextMenu={handleContextMenu}
       className={`absolute top-1 bottom-1 group rounded-lg overflow-hidden ${haveTime && !remoteDrag ? 'cursor-grab active:cursor-grabbing' : ''} ${remoteDrag ? 'cursor-not-allowed' : ''}`}
       style={{
         left: `${leftPct}%`,
@@ -355,49 +397,33 @@ function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth,
           </div>
         </div>
       )}
-      {/* Hover controls */}
-      <div className="absolute top-1/2 -translate-y-1/2 right-1 z-20 flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity rounded overflow-hidden" style={{ background: 'rgba(0,0,0,0.7)' }}>
+    </div>
+    {menu && (
+      <div
+        onMouseDown={(e) => e.stopPropagation()}
+        className="fixed z-50 min-w-[140px] rounded-md py-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur-md"
+        style={{
+          left: menu.x, top: menu.y,
+          background: 'rgba(20, 12, 30, 0.96)',
+          border: '1px solid rgba(255,255,255,0.08)',
+        }}
+      >
         <button
-          onClick={async () => {
-            if (!track.fileId) return;
-            // Drop the copy immediately after *this* clip, snapped to the
-            // nearest bar. Using track.startOffset + duration (instead of a
-            // fixed clipIndex-based offset) means the duplicate lands next
-            // to the clip the user actually clicked, even after the user
-            // has dragged it elsewhere on the grid.
-            const loaded = useAudioStore.getState().loadedTracks.get(track.id);
-            const clipDuration = loaded?.buffer?.duration || 0;
-            const currentOffset = loaded?.startOffset ?? 0;
-            const rawOffset = currentOffset + clipDuration;
-            const projectBpm = useAudioStore.getState().projectBpm || 120;
-            const newOffset = Math.max(0, snapToBar(rawOffset, projectBpm, 'nearest'));
-
-            const result = await api.addTrack(selectedProjectId, { name: (track.name || 'Track'), type: track.type || 'audio', fileId: track.fileId, fileName: track.name } as any);
-            if (result?.id) {
-              // Stash the intended offset so the audio store applies it the
-              // moment the new track lands (it otherwise defaults to 0 and
-              // overlaps the original before the async seeder catches up).
-              pendingTrackOffsets.set(result.id, newOffset);
-            }
-            window.dispatchEvent(new CustomEvent('ghost-refresh-project'));
-            // Ask TransportBar to flush the arrangement immediately so the
-            // new clip's position survives a quick plugin close.
-            window.dispatchEvent(new CustomEvent('ghost-save-arrangement'));
-          }}
-          title="Duplicate"
-          className="w-7 h-7 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+          onClick={() => { setMenu(null); duplicateClip(); }}
+          className="w-full px-3 py-1.5 text-[13px] text-left text-ghost-text-secondary hover:bg-white/[0.06] hover:text-white transition-colors flex items-center gap-2"
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+          Duplicate
         </button>
         <button
-          onClick={() => { useAudioStore.getState().removeTrack(track.id); deleteTrack(selectedProjectId, track.id); }}
-          title="Delete"
-          className="w-7 h-7 flex items-center justify-center text-white/70 hover:text-red-400 hover:bg-white/10 transition-colors"
+          onClick={() => { setMenu(null); deleteClip(); }}
+          className="w-full px-3 py-1.5 text-[13px] text-left text-ghost-error-red hover:bg-ghost-error-red/10 transition-colors flex items-center gap-2"
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+          Delete
         </button>
       </div>
-    </div>
+    )}
     </>
   );
 }
