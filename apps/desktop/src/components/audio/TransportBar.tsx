@@ -398,24 +398,21 @@ export default function TransportBar({ tracks, projectId, projectTempo, onTempoC
         if (!clipClipboard) return;
         e.preventDefault();
         // Paste the bundle EXACTLY adjacent to the source — no grid snap on
-        // baseOffset. Snapping the base would round to a nearby bar and
-        // either overlap the source or leave an unexpected gap. Preserving
-        // the source's exact spacing is what makes the paste visually
-        // identical to the original group. If the user wants it grid-
-        // aligned after paste, they drag the whole selection (group drag
-        // snaps by the first-beat rule already).
+        // the base. Fire every addTrack in parallel so 12 pasted clips
+        // come back in one round-trip-window instead of twelve.
         const baseOffset = Math.max(0, clipClipboard.nextBaseOffset);
+        const bundle = clipClipboard;
         try {
-          for (const item of clipClipboard.items) {
+          await Promise.all(bundle.items.map(async (item) => {
             const itemOffset = baseOffset + item.relOffset;
             const result = await api.addTrack(projectId, {
               name: item.name, type: item.type as any,
               fileId: item.fileId, fileName: item.name,
             } as any);
             if (result?.id) pendingTrackOffsets.set(result.id, itemOffset);
-          }
+          }));
           // Advance the base for the next Ctrl+V so batches lay end-to-end.
-          clipClipboard.nextBaseOffset = baseOffset + clipClipboard.bundleDuration;
+          bundle.nextBaseOffset = baseOffset + bundle.bundleDuration;
           window.dispatchEvent(new CustomEvent('ghost-refresh-project'));
           window.dispatchEvent(new CustomEvent('ghost-save-arrangement'));
         } catch { /* swallow — UI will surface via project refresh */ }
