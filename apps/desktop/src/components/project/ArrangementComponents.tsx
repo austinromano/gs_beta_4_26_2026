@@ -173,19 +173,15 @@ export function ArrangementPlayhead() {
   const isPlaying = useAudioStore((s) => s.isPlaying);
   const soloPlayingTrackId = useAudioStore((s) => s.soloPlayingTrackId);
   const { arrangementDur } = useArrangement();
-  // Ghost playheads for collaborators currently in the project room.
-  const remoteTransports = useCollabStore((s) => s.remoteTransports);
 
   if (soloPlayingTrackId) return null;
   const showLocal = isPlaying || currentTime > 0;
   const localPct = arrangementDur > 0 ? (currentTime / arrangementDur) * 100 : 0;
 
+  // Collaborator ghost playheads removed by design — playback is per-user
+  // and showing other people's positions on your timeline was confusing
+  // when multiple people scrub different sections.
   const remotes: Array<{ userId: string; pct: number; colour: string; displayName: string; isPlaying: boolean }> = [];
-  remoteTransports.forEach((t) => {
-    if (arrangementDur <= 0) return;
-    const pct = (t.currentTime / arrangementDur) * 100;
-    remotes.push({ userId: t.userId, pct, colour: t.colour, displayName: t.displayName, isPlaying: t.isPlaying });
-  });
 
   return (
     <>

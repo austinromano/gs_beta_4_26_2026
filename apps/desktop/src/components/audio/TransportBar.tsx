@@ -438,29 +438,11 @@ export default function TransportBar({ tracks, projectId, projectTempo, onTempoC
     return () => useCollabStore.getState().detach();
   }, [projectId]);
 
-  // Broadcast a transport tick at ~10 Hz while playing so collaborators
-  // see a ghost playhead follow us. On pause we send one final tick with
-  // isPlaying:false so their ghost snaps to the right spot and stops.
-  useEffect(() => {
-    if (!projectId) return;
-    const socket = getSocket();
-    if (!socket) return;
-    // Always emit one tick per state change so paused/resumed state is current.
-    socket.emit('transport:tick', {
-      projectId,
-      currentTime: useAudioStore.getState().currentTime,
-      isPlaying,
-    });
-    if (!isPlaying) return;
-    const id = setInterval(() => {
-      socket.emit('transport:tick', {
-        projectId,
-        currentTime: useAudioStore.getState().currentTime,
-        isPlaying: true,
-      });
-    }, 100);
-    return () => clearInterval(id);
-  }, [projectId, isPlaying]);
+  // Playback is intentionally NOT synced across collaborators — each user
+  // has their own independent transport. Audio was already independent;
+  // only the visual ghost-playhead used to follow collaborators, which got
+  // confusing when multiple people scrubbed different sections at once.
+  // The transport:tick broadcast is now disabled.
 
   const hasTracksLoaded = loadedTracks.size > 0;
 
