@@ -44,6 +44,73 @@ const INVITE_NUDGE_FLAG = 'ghost_shown_invite_nudge';
 
 const VIZ_MODES = ['bars', 'wave', 'radial', 'ghost'] as const;
 
+// Grid snap subdivision picker. Sits next to the zoom buttons in the
+// arrangement toolbar; reads/writes audioStore.gridDivision so every snap
+// site (clip drag, paste, duplicate, trim) follows the same setting.
+function GridSnapPicker() {
+  const grid = useAudioStore((s) => s.gridDivision);
+  const setGrid = useAudioStore((s) => s.setGridDivision);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const options: Array<{ label: string; value: number }> = [
+    { label: 'Bar', value: 1 },
+    { label: '1/2', value: 0.5 },
+    { label: '1/4', value: 0.25 },
+    { label: '1/8', value: 0.125 },
+    { label: '1/16', value: 0.0625 },
+  ];
+  const current = options.find((o) => Math.abs(o.value - grid) < 1e-6) || options[0];
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`px-2 h-6 flex items-center justify-center gap-1 rounded text-[11px] font-semibold transition-colors ${grid !== 1 ? 'text-ghost-green' : 'text-white/40 hover:text-white/70'}`}
+        title={`Grid snap: ${current.label}`}
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+          <rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
+        </svg>
+        <span className="tabular-nums">{current.label}</span>
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 mt-1 z-50 min-w-[80px] rounded-md py-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur-md"
+          style={{ background: 'rgba(20, 12, 30, 0.96)', border: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          {options.map((o) => {
+            const active = Math.abs(o.value - grid) < 1e-6;
+            return (
+              <button
+                key={o.value}
+                onClick={() => { setGrid(o.value); setOpen(false); }}
+                className={`w-full px-3 py-1 text-[12px] text-left transition-colors flex items-center justify-between ${active ? 'text-ghost-green bg-white/[0.06]' : 'text-ghost-text-secondary hover:bg-white/[0.06] hover:text-white'}`}
+              >
+                <span>{o.label}</span>
+                {active && <span className="text-[9px]">✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DockButton({ title, active, onClick, children }: { title: string; active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <motion.button
@@ -729,6 +796,7 @@ export default function PluginLayout() {
                                   <line x1="11" y1="8" x2="11" y2="14" /><line x1="8" y1="11" x2="14" y2="11" />
                                 </svg>
                               </button>
+                              <GridSnapPicker />
                               <button
                                 onClick={() => setShowAllBars((v) => !v)}
                                 className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showAllBars ? 'text-ghost-green' : 'text-white/30 hover:text-white/60'}`}

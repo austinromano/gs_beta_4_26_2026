@@ -138,6 +138,29 @@ export function snapToBar(seconds: number, bpm: number, direction: 'nearest' | '
   return Math.round(seconds / spb) * spb;
 }
 
+/**
+ * Snap to an arbitrary subdivision of a bar.
+ * `divisionOfBar` is the fraction of a bar to snap to:
+ *   1     → whole bar
+ *   0.5   → half note
+ *   0.25  → quarter note
+ *   0.125 → eighth note
+ *   0.0625→ sixteenth note
+ * (Free movement is opt-in via 0 — caller should bypass snapping in that case.)
+ */
+export function snapToGrid(
+  seconds: number,
+  bpm: number,
+  divisionOfBar: number,
+  direction: 'nearest' | 'floor' | 'ceil' = 'nearest',
+): number {
+  if (divisionOfBar <= 0) return seconds;
+  const step = secondsPerBar(bpm) * divisionOfBar;
+  if (direction === 'floor') return Math.floor(seconds / step) * step;
+  if (direction === 'ceil') return Math.ceil(seconds / step) * step;
+  return Math.round(seconds / step) * step;
+}
+
 export function detectBpmFromName(name: string): number {
   const patterns = [
     /[_\-\s](\d{2,3})\s*bpm/i,

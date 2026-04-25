@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAudioStore, pendingTrackOffsets } from '../../stores/audioStore';
 import { useProjectStore } from '../../stores/projectStore';
-import { audioBufferCache, cacheBuffer, detectBpmFromName, formatTime, snapToBar } from '../../lib/audio';
+import { audioBufferCache, cacheBuffer, detectBpmFromName, formatTime, snapToGrid } from '../../lib/audio';
 import { api } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { useCollabStore } from '../../stores/collabStore';
@@ -343,7 +343,8 @@ export default function TransportBar({ tracks, projectId, projectTempo, onTempoC
         e.preventDefault();
         const projectBpm = useAudioStore.getState().projectBpm || 120;
         const playhead = useAudioStore.getState().currentTime || 0;
-        const newOffset = Math.max(0, snapToBar(playhead, projectBpm, 'nearest'));
+        const grid = useAudioStore.getState().gridDivision;
+        const newOffset = Math.max(0, snapToGrid(playhead, projectBpm, grid, 'nearest'));
         try {
           const result = await api.addTrack(projectId, {
             name: clipClipboard.name, type: clipClipboard.type as any,

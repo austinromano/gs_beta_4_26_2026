@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef, useCallback, memo } from 'react';
 import { motion } from 'framer-motion';
 import { useAudioStore } from '../../stores/audioStore';
-import { rawDataCache, audioBufferCache, getAudioData, snapToBar, getPeaks, peaksCache, type ServerPeaks } from '../../lib/audio';
+import { rawDataCache, audioBufferCache, getAudioData, snapToGrid, getPeaks, peaksCache, type ServerPeaks } from '../../lib/audio';
 
 export default memo(function Waveform({
   seed, height = 60, fileId, projectId, showPlayhead = false, trackId, showTrimHandles = false,
@@ -209,9 +209,10 @@ export default memo(function Waveform({
     const onMouseUp = () => {
       // Snap to nearest bar on release
       if (trackId) {
-        const snappedStart = snapToBar(useAudioStore.getState().loadedTracks.get(trackId)?.trimStart ?? 0, bpm, 'nearest');
+        const grid = useAudioStore.getState().gridDivision;
+        const snappedStart = snapToGrid(useAudioStore.getState().loadedTracks.get(trackId)?.trimStart ?? 0, bpm, grid, 'nearest');
         const rawEnd = useAudioStore.getState().loadedTracks.get(trackId)?.trimEnd ?? 0;
-        const snappedEnd = rawEnd > 0 ? snapToBar(rawEnd, bpm, 'nearest') : 0;
+        const snappedEnd = rawEnd > 0 ? snapToGrid(rawEnd, bpm, grid, 'nearest') : 0;
         setTrackTrim(trackId, Math.max(0, snappedStart), snappedEnd);
       }
       setDraggingHandle(null);

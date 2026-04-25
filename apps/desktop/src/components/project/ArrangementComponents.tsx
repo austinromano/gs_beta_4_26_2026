@@ -3,7 +3,7 @@ import { useAudioStore, pendingTrackOffsets } from '../../stores/audioStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useCollabStore } from '../../stores/collabStore';
 import { api } from '../../lib/api';
-import { snapToBar } from '../../lib/audio';
+import { snapToGrid } from '../../lib/audio';
 import { getSocket } from '../../lib/socket';
 import Waveform from '../tracks/Waveform';
 import Avatar from '../common/Avatar';
@@ -264,7 +264,8 @@ function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth,
     const currentOffset = loaded?.startOffset ?? 0;
     const rawOffset = currentOffset + clipDuration;
     const projectBpm = useAudioStore.getState().projectBpm || 120;
-    const newOffset = Math.max(0, snapToBar(rawOffset, projectBpm, 'nearest'));
+    const grid = useAudioStore.getState().gridDivision;
+    const newOffset = Math.max(0, snapToGrid(rawOffset, projectBpm, grid, 'nearest'));
     const result = await api.addTrack(selectedProjectId, { name: (track.name || 'Track'), type: track.type || 'audio', fileId: track.fileId, fileName: track.name } as any);
     if (result?.id) pendingTrackOffsets.set(result.id, newOffset);
     window.dispatchEvent(new CustomEvent('ghost-refresh-project'));
@@ -321,7 +322,8 @@ function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth,
       // edge. For samples with lead-in silence this is the difference
       // between "kinda lines up" and "locks into the groove."
       const beatPos = liveOffset + beatAlignOffset;
-      const snappedBeatPos = snapToBar(beatPos, bpm, 'nearest');
+      const grid = useAudioStore.getState().gridDivision;
+      const snappedBeatPos = snapToGrid(beatPos, bpm, grid, 'nearest');
       const snapped = Math.max(0, snappedBeatPos - beatAlignOffset);
       setDragOffset(null);
       if (Math.abs(snapped - initialOffset) > 0.001) {

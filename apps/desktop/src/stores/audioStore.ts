@@ -62,6 +62,11 @@ interface AudioState {
   // user clicks empty arrangement space.
   selectedTrackId: string | null;
   setSelectedTrackId: (id: string | null) => void;
+  // Grid snap subdivision — fraction of a bar. 1 = whole bar, 0.25 = quarter
+  // note, 0.125 = eighth note, 0.0625 = sixteenth note. Drives every snap-
+  // to-grid call across the arrangement (clip drag, paste, duplicate, trim).
+  gridDivision: number;
+  setGridDivision: (divisionOfBar: number) => void;
 
   loadTrack: (trackId: string, fileId: string, projectId: string, trackBpm?: number) => Promise<void>;
   loadTrackFromBuffer: (
@@ -254,6 +259,16 @@ export const useAudioStore = create<AudioState>((set, get) => {
     loadError: null,
     selectedTrackId: null,
     setSelectedTrackId: (id) => set({ selectedTrackId: id }),
+    gridDivision: (() => {
+      const raw = typeof window !== 'undefined' ? window.localStorage?.getItem('ghost_grid_division') : null;
+      const n = raw ? parseFloat(raw) : NaN;
+      const allowed = [1, 0.5, 0.25, 0.125, 0.0625];
+      return allowed.includes(n) ? n : 1;
+    })(),
+    setGridDivision: (divisionOfBar) => {
+      try { window.localStorage?.setItem('ghost_grid_division', String(divisionOfBar)); } catch {}
+      set({ gridDivision: divisionOfBar });
+    },
 
     loadTrack: async (trackId, fileId, projectId, trackBpm = 0) => {
       if (audioBufferCache.has(fileId)) {
