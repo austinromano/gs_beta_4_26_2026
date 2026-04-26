@@ -595,12 +595,13 @@ function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth,
     };
     const handleUp = () => {
       const grid = useAudioStore.getState().gridDivision;
-      // Snap based on the initiator clip's first detected beat → bar line.
-      // The same delta is then applied to every clip in the group so their
-      // relative spacing is preserved.
-      const beatPos = liveOffset + beatAlignOffset;
-      const snappedBeatPos = snapToGrid(beatPos, bpm, grid, 'nearest');
-      const snappedInitiator = Math.max(0, snappedBeatPos - beatAlignOffset);
+      // Snap the clip's LEADING EDGE to the grid — what the user sees on
+      // the timeline is what gets snapped. The previous beat-aligned snap
+      // (firstBeatOffset shifts the snap target by the detected first
+      // downbeat) made clips look misaligned even though their first hit
+      // landed on the bar; the new behavior matches every modern DAW.
+      void beatAlignOffset;
+      const snappedInitiator = Math.max(0, snapToGrid(liveOffset, bpm, grid, 'nearest'));
       if (isGroupDrag) {
         const finalDelta = snappedInitiator - initialOffset;
         for (const id of groupIds) {
