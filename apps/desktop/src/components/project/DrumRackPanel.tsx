@@ -31,6 +31,7 @@ export default function DrumRackPanel({ projectId }: { projectId: string }) {
   const clearClip = useDrumRack((s) => s.clearClip);
   const setPatternSteps = useDrumRack((s) => s.setPatternSteps);
   const createClipAt = useDrumRack((s) => s.createClipAt);
+  const duplicateClip = useDrumRack((s) => s.duplicateClip);
   const selectClip = useDrumRack((s) => s.selectClip);
   const startScheduler = useDrumRack((s) => s.startScheduler);
   const stopScheduler = useDrumRack((s) => s.stopScheduler);
@@ -46,16 +47,24 @@ export default function DrumRackPanel({ projectId }: { projectId: string }) {
   const selectedClip = clips.find((c) => c.id === selectedClipId) ?? null;
   const patternSteps = selectedClip?.patternSteps ?? 16;
 
-  // Default clip length = 1 bar at the current project BPM (16 steps fit
-  // exactly when patternSteps=16). User can resize on the timeline.
+  // Default clip length = 8 bars at the current project BPM. Long enough
+  // to drop in as a section; pattern loops inside via the scheduler. Drag
+  // the right edge to resize.
   const projectBpm = useAudioStore((s) => s.projectBpm);
   const bpm = projectBpm > 0 ? projectBpm : 120;
   const barSec = 240 / bpm;
+  const defaultClipSec = 8 * barSec;
 
   const handleAddClip = () => {
     const playhead = useAudioStore.getState().currentTime || 0;
-    const id = createClipAt(playhead, barSec);
+    const id = createClipAt(playhead, defaultClipSec);
     selectClip(id);
+  };
+
+  const handleDuplicate = () => {
+    if (!selectedClipId) return;
+    const playhead = useAudioStore.getState().currentTime || 0;
+    duplicateClip(selectedClipId, playhead);
   };
 
   // Load any source (OS file / library / project file) into the row.
@@ -122,9 +131,17 @@ export default function DrumRackPanel({ projectId }: { projectId: string }) {
           <button
             onClick={handleAddClip}
             className="px-2 py-0.5 rounded bg-ghost-green/15 text-ghost-green hover:bg-ghost-green/25"
-            title="Add clip at playhead"
+            title="Add 8-bar clip at playhead"
           >
             + Clip
+          </button>
+          <button
+            onClick={handleDuplicate}
+            disabled={!selectedClip}
+            className="px-2 py-0.5 rounded bg-ghost-green/10 text-ghost-green hover:bg-ghost-green/20 disabled:opacity-30 disabled:hover:bg-ghost-green/10"
+            title="Duplicate selected clip at playhead"
+          >
+            Duplicate
           </button>
           <button
             onClick={() => selectedClip && setPatternSteps(selectedClip.id, 16)}

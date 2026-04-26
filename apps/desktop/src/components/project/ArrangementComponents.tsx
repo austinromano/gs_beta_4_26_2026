@@ -740,6 +740,7 @@ function DrumRackLanes({ laneHeight }: { laneHeight: number }) {
   const setOpen = useDrumRack((s) => s.setOpen);
   const { bpm, arrangementDur } = useArrangement();
   const barSec = 240 / Math.max(1, bpm);
+  const defaultClipSec = 8 * barSec;
   const laneRef = useRef<HTMLDivElement | null>(null);
   const hue = 165; // ghost-green family for the drum lane
 
@@ -754,12 +755,12 @@ function DrumRackLanes({ laneHeight }: { laneHeight: number }) {
     return ratio * arrangementDur;
   };
 
-  // Click empty space on the lane → create a 1-bar clip there.
+  // Click empty space on the lane → create an 8-bar clip there.
   const handleLaneMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     if ((e.target as HTMLElement).closest('[data-drum-clip]')) return;
     const t = xToTime(e.clientX);
-    const id = createClipAt(t, barSec);
+    const id = createClipAt(t, defaultClipSec);
     selectClip(id);
     setOpen(true);
   };

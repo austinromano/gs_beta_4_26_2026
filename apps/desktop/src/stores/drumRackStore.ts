@@ -57,6 +57,7 @@ interface DrumRackState {
   // Clip-level (per-section patterns)
   selectClip: (clipId: string | null) => void;
   createClipAt: (startSec: number, lengthSec: number) => string;
+  duplicateClip: (clipId: string, atSec: number) => string | null;
   deleteClip: (clipId: string) => void;
   moveClip: (clipId: string, newStartSec: number) => void;
   resizeClip: (clipId: string, newLengthSec: number) => void;
@@ -123,6 +124,23 @@ export const useDrumRack = create<DrumRackState>((set, get) => ({
         lengthSec: Math.max(0.05, lengthSec),
         patternSteps: 16,
         steps: emptySteps(s.rows.length, 16),
+      }],
+      selectedClipId: id,
+    }));
+    return id;
+  },
+
+  duplicateClip: (clipId, atSec) => {
+    const src = get().clips.find((c) => c.id === clipId);
+    if (!src) return null;
+    const id = crypto.randomUUID();
+    set((s) => ({
+      clips: [...s.clips, {
+        id,
+        startSec: Math.max(0, atSec),
+        lengthSec: src.lengthSec,
+        patternSteps: src.patternSteps,
+        steps: src.steps.map((row) => row.slice()),
       }],
       selectedClipId: id,
     }));
