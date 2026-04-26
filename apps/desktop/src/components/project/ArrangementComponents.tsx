@@ -730,6 +730,10 @@ function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth,
   );
 }
 
+// Sentinel laneOrder key for the drum rack so it sorts inline with
+// regular tracks and the user can drag it up/down like any other lane.
+export const DRUM_RACK_LANE_KEY = '__drumrack__';
+
 /* ── Drum-rack lane ──
    One combined drum-rack lane with draggable clips. Each clip carries
    its own step pattern; click an empty slot to add one, click a clip
@@ -752,6 +756,7 @@ function DrumRackLanes({ laneHeight }: { laneHeight: number }) {
   const stepDur = 60 / Math.max(1, bpm) / 4; // 16th note in seconds
   const defaultClipSec = 8 * barSec;
   const laneRef = useRef<HTMLDivElement | null>(null);
+  const dragControls = useDragControls();
   const hue = 165; // ghost-green family for the drum lane
 
   if (arrangementDur <= 0) return null;
@@ -781,9 +786,28 @@ function DrumRackLanes({ laneHeight }: { laneHeight: number }) {
   };
 
   return (
-    <div className="flex flex-col gap-1">
+    <Reorder.Item
+      value={DRUM_RACK_LANE_KEY}
+      dragListener={false}
+      dragControls={dragControls}
+      className="flex flex-col gap-1"
+      whileDrag={{ scale: 1.005, zIndex: 50, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}
+      transition={{ duration: 0.15 }}
+      as="div"
+    >
       <div className="flex relative" style={{ height: laneHeight }}>
-        <div data-track-header className="h-full flex shrink-0 relative">
+        <div
+          data-track-header
+          onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            // Don't start the lane drag if the pointer-down was on the
+            // chevron / level meter button — those have their own click.
+            if ((e.target as HTMLElement).closest('button')) return;
+            e.preventDefault();
+            dragControls.start(e);
+          }}
+          className="h-full flex shrink-0 relative cursor-grab active:cursor-grabbing"
+        >
           <TrackHeader name="Drum Rack" hue={hue} trackIds={[]} />
           {/* Expand / collapse toggle — opens per-row sub-lanes below. */}
           <button
@@ -840,7 +864,7 @@ function DrumRackLanes({ laneHeight }: { laneHeight: number }) {
           stepDur={stepDur}
         />
       ))}
-    </div>
+    </Reorder.Item>
   );
 }
 
@@ -1287,10 +1311,13 @@ export function DraggableTrackList({ tracks, selectedProjectId, deleteTrack, upd
   }, [setLaneOrderStore]);
 
   const orderedLaneKeys = useMemo(() => {
-    const keys = Array.from(lanes.keys());
+    // Inject the drum-rack sentinel so it lives inside the same Reorder
+    // group and can be dragged up/down with the other lanes.
+    const keys = [DRUM_RACK_LANE_KEY, ...Array.from(lanes.keys())];
     const indexOf = new Map(laneOrder.map((k, i) => [k, i]));
     // Stable sort: lanes the user has already arranged keep their slot;
-    // brand-new lanes land at the bottom in tracks-prop order.
+    // brand-new lanes (and a never-reordered drum rack) land at the
+    // bottom in insertion order.
     return keys.sort((a, b) => {
       const ia = indexOf.get(a) ?? Infinity;
       const ib = indexOf.get(b) ?? Infinity;
@@ -1357,10 +1384,6 @@ export function DraggableTrackList({ tracks, selectedProjectId, deleteTrack, upd
       className="relative flex flex-col gap-1 mt-2"
       onPointerDown={handleMarqueeStart}
     >
-      {/* Drum-rack lanes — virtual lanes mirroring the rack's rows. They
-          read straight from drumRackStore so toggling a step in the rack
-          panel materialises a mini-clip in the arrangement instantly. */}
-      <DrumRackLanes laneHeight={laneHeight} />
       <Reorder.Group
         axis="y"
         values={orderedLaneKeys}
@@ -1369,6 +1392,12 @@ export function DraggableTrackList({ tracks, selectedProjectId, deleteTrack, upd
         as="div"
       >
         {orderedLaneKeys.map((laneKey) => {
+          if (laneKey === DRUM_RACK_LANE_KEY) {
+            // The drum rack rides the same Reorder group; it owns its
+            // own Reorder.Item internally so the chevron expansion +
+            // sub-lanes move as one block.
+            return <DrumRackLanes key={laneKey} laneHeight={laneHeight} />;
+          }
           const laneTracks = lanes.get(laneKey);
           if (!laneTracks) return null;
           return (
