@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { ProjectDetail } from '@ghost/types';
+import PresenceAvatars from './PresenceAvatars';
 
 interface Props {
   project: ProjectDetail;
@@ -130,6 +131,7 @@ export default function ProjectHeaderBar({
           onBlur={() => { if (keyTimer.current) clearTimeout(keyTimer.current); if (key) onKeyChange(key); }}
         />
       </div>
+      <PresenceAvatars />
       <div className="relative z-20" ref={menuRef}>
         <button
           onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
