@@ -377,12 +377,14 @@ export const useAudioStore = create<AudioState>((set, get) => {
         if (pending !== undefined) pendingTrackOffsets.delete(trackId);
 
         // Time-stretch to match the project's BPM when we have analysis.
-        // Keep the pristine buffer in `originalBuffer` so BPM changes can
-        // re-stretch from the source (stretching a stretched buffer degrades
-        // quality fast).
+        // Source BPM = the user's manual override (existing.bpm) if set,
+        // else the file's detectedBpm. Keeping originalBuffer pristine so
+        // every stretch starts from the source (stretching a stretched
+        // buffer degrades quality fast).
         const projBpm = s.projectBpm;
-        const playBuffer = detectedBpm
-          ? stretchForProject(buffer, detectedBpm, projBpm, { character, beats })
+        const sourceBpm = (existing?.bpm && existing.bpm > 0) ? existing.bpm : detectedBpm;
+        const playBuffer = sourceBpm
+          ? stretchForProject(buffer, sourceBpm, projBpm, { character, beats })
           : buffer;
 
         m.set(trackId, {
@@ -421,9 +423,11 @@ export const useAudioStore = create<AudioState>((set, get) => {
       const m = new Map(loadedTracks);
       let changed = false;
       m.forEach((track, id) => {
-        if (!track.originalBuffer || !track.detectedBpm) return;
+        if (!track.originalBuffer) return;
+        const sourceBpm = (track.bpm && track.bpm > 0) ? track.bpm : track.detectedBpm;
+        if (!sourceBpm) return;
         const nextBuffer = stretchForProject(
-          track.originalBuffer, track.detectedBpm, projectBpm,
+          track.originalBuffer, sourceBpm, projectBpm,
           { character: track.character, beats: track.beats },
         );
         if (nextBuffer !== track.buffer) {
@@ -440,12 +444,30 @@ export const useAudioStore = create<AudioState>((set, get) => {
     },
 
     setTrackBpm: (trackId, bpm) => {
-      const { loadedTracks } = get();
+      const { loadedTracks, projectBpm } = get();
       const track = loadedTracks.get(trackId);
       if (!track) return;
-      track.bpm = bpm;
-      set({ loadedTracks: new Map(loadedTracks) });
+      const m = new Map(loadedTracks);
+      // Re-stretch the playback buffer from the original whenever the user
+      // overrides the source BPM, so the clip immediately reflects the new
+      // tempo against the project. Stop the existing source first so it
+      // doesn't keep playing the old (wrongly-stretched) buffer.
+      if (track.originalBuffer && projectBpm > 0 && bpm > 0) {
+        const nextBuffer = stretchForProject(
+          track.originalBuffer, bpm, projectBpm,
+          { character: track.character, beats: track.beats },
+        );
+        if (track.source) safeStop(track.source);
+        if (track.gainNode) { try { track.gainNode.disconnect(); } catch { /* ignore */ } }
+        m.set(trackId, { ...track, bpm, buffer: nextBuffer, source: null, gainNode: null });
+        set({ loadedTracks: m, bufferVersion: get().bufferVersion + 1 });
+      } else {
+        m.set(trackId, { ...track, bpm });
+        set({ loadedTracks: m });
+      }
       restartIfPlaying();
+      // Persist via arrangement save so the override travels with the project.
+      window.dispatchEvent(new CustomEvent('ghost-save-arrangement'));
     },
 
     unloadTrack: (trackId) => {
@@ -740,6 +762,7 @@ export const useAudioStore = create<AudioState>((set, get) => {
           muted: track.muted,
           soloed: track.soloed,
           pitch: track.pitch,
+          bpm: track.bpm || undefined,
           parentTrackId: parentId,
           parentFileId: parentId ? serverTrackFileIds.get(parentId) : undefined,
         });
@@ -750,7 +773,7 @@ export const useAudioStore = create<AudioState>((set, get) => {
     },
 
     applyArrangementClips: (clips) => {
-      const { loadedTracks } = get();
+      const { loadedTracks, projectBpm } = get();
       const m = new Map(loadedTracks);
       for (const clip of clips) {
         const existing = m.get(clip.trackId);
@@ -762,6 +785,21 @@ export const useAudioStore = create<AudioState>((set, get) => {
           existing.muted = clip.muted;
           existing.soloed = clip.soloed;
           existing.pitch = clip.pitch;
+          // Manual BPM override: if it changed, re-stretch the playback
+          // buffer from the original so playback matches.
+          if (clip.bpm && clip.bpm > 0 && clip.bpm !== existing.bpm) {
+            existing.bpm = clip.bpm;
+            if (existing.originalBuffer && projectBpm > 0) {
+              if (existing.source) safeStop(existing.source);
+              if (existing.gainNode) { try { existing.gainNode.disconnect(); } catch { /* ignore */ } }
+              existing.buffer = stretchForProject(
+                existing.originalBuffer, clip.bpm, projectBpm,
+                { character: existing.character, beats: existing.beats },
+              );
+              existing.source = null;
+              existing.gainNode = null;
+            }
+          }
         } else if (clip.parentTrackId) {
           const parentTrack = m.get(clip.parentTrackId);
           if (parentTrack) {

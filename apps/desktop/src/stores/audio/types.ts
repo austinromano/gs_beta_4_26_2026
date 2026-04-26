@@ -39,6 +39,10 @@ export interface ArrangementClipState {
   muted: boolean;
   soloed: boolean;
   pitch: number;
+  // Manual BPM override — when set, takes precedence over the file's
+  // detectedBpm for stretch calculations. Lets the user correct a wrong
+  // detection or halve / double the tempo.
+  bpm?: number;
   parentTrackId?: string;
   parentFileId?: string;
 }

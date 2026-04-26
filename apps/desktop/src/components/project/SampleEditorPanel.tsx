@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAudioStore } from '../../stores/audioStore';
 import { useProjectStore } from '../../stores/projectStore';
 import Waveform from '../tracks/Waveform';
@@ -18,6 +18,7 @@ export default function SampleEditorPanel({ projectId }: { projectId: string }) 
   const setTrackVolume = useAudioStore((s) => s.setTrackVolume);
   const setTrackMuted = useAudioStore((s) => s.setTrackMuted);
   const setTrackPitch = useAudioStore((s) => s.setTrackPitch);
+  const setTrackBpm = useAudioStore((s) => s.setTrackBpm);
   const currentProject = useProjectStore((s) => s.currentProject);
 
   // Show only when there's exactly one selected clip — the panel is for
@@ -46,6 +47,9 @@ export default function SampleEditorPanel({ projectId }: { projectId: string }) 
   const volume = loaded?.volume ?? 1;
   const pitch = loaded?.pitch ?? 0;
   const muted = loaded?.muted ?? false;
+  // Manual BPM override (loaded.bpm). Falls back to the file's detected
+  // BPM so the box always shows the value currently driving the stretch.
+  const effectiveBpm = (loaded?.bpm && loaded.bpm > 0) ? loaded.bpm : (detectedBpm ?? 120);
 
   const fmtDuration = (s: number) => {
     if (!s || !Number.isFinite(s)) return '–';
@@ -70,10 +74,15 @@ export default function SampleEditorPanel({ projectId }: { projectId: string }) 
           </button>
           <span className="text-[12px] font-semibold text-white/90 truncate" title={fileName}>{fileName}</span>
         </div>
-        <div className="flex flex-wrap gap-1">
-          {detectedBpm != null && (
-            <Pill icon="bpm" label={`${Math.round(detectedBpm)} BPM`} />
-          )}
+        <div className="flex flex-wrap gap-1 items-center">
+          {/* Editable BPM box, /2 and ×2. Like Ableton's Warp BPM widget —
+              changes the SOURCE tempo we stretch from, so when the project
+              tempo and sample tempo agree the clip plays at native speed. */}
+          <BpmEditor
+            value={effectiveBpm}
+            onChange={(v) => setTrackBpm(trackId, v)}
+            isOverride={!!loaded?.bpm && loaded.bpm > 0}
+          />
           <Pill icon="time" label={fmtDuration(durationSec)} />
           {sampleCharacter && (
             <Pill icon="dot" label={sampleCharacter[0].toUpperCase() + sampleCharacter.slice(1)} />
@@ -126,6 +135,58 @@ export default function SampleEditorPanel({ projectId }: { projectId: string }) 
         />
       </div>
     </div>
+  );
+}
+
+function BpmEditor({ value, onChange, isOverride }: { value: number; onChange: (v: number) => void; isOverride: boolean }) {
+  // Local text state so the user can type freely (e.g. backspace through "1"
+  // without the field snapping back). Commits on Enter or blur, clamped to
+  // a sane musical range. Highlights when the user has overridden the
+  // detected value so they can tell at a glance.
+  const [draft, setDraft] = useState(String(Math.round(value * 100) / 100));
+  useEffect(() => { setDraft(String(Math.round(value * 100) / 100)); }, [value]);
+
+  const commit = (v: number) => {
+    if (!Number.isFinite(v)) return;
+    const clamped = Math.max(20, Math.min(400, v));
+    onChange(Number(clamped.toFixed(2)));
+  };
+
+  return (
+    <span
+      className="inline-flex items-stretch rounded overflow-hidden text-[10px] font-medium"
+      style={{
+        background: 'rgba(255,255,255,0.04)',
+        border: `1px solid ${isOverride ? 'rgba(0,255,200,0.45)' : 'rgba(255,255,255,0.06)'}`,
+      }}
+    >
+      <span className="px-1.5 self-center text-ghost-green/80 uppercase tracking-wider text-[9px] font-semibold">BPM</span>
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { commit(parseFloat(draft)); (e.target as HTMLInputElement).blur(); }
+          else if (e.key === 'Escape') { setDraft(String(Math.round(value * 100) / 100)); (e.target as HTMLInputElement).blur(); }
+        }}
+        onBlur={() => commit(parseFloat(draft))}
+        className="w-12 bg-transparent text-white/90 text-center outline-none tabular-nums focus:bg-white/[0.06]"
+      />
+      <button
+        onClick={() => commit(value / 2)}
+        className="px-1.5 text-white/50 hover:bg-white/[0.06] hover:text-white border-l border-white/[0.06]"
+        title="Half time"
+      >
+        /2
+      </button>
+      <button
+        onClick={() => commit(value * 2)}
+        className="px-1.5 text-white/50 hover:bg-white/[0.06] hover:text-white border-l border-white/[0.06]"
+        title="Double time"
+      >
+        ×2
+      </button>
+    </span>
   );
 }
 
