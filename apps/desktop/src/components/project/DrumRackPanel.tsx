@@ -63,6 +63,19 @@ export default function DrumRackPanel({ projectId }: { projectId: string }) {
   const selectedClip = clips.find((c) => c.id === selectedClipId) ?? null;
   const patternSteps = selectedClip?.patternSteps ?? 16;
 
+  // Live "current step" within the selected clip's pattern — drives the
+  // column highlight + per-cell flash so the rack reads in lock-step with
+  // the scheduler. -1 when the playhead is outside the clip or paused.
+  const currentStepIdx = useAudioStore((s) => {
+    if (!selectedClip || !s.isPlaying) return -1;
+    const t = s.currentTime;
+    if (t < selectedClip.startSec || t >= selectedClip.startSec + selectedClip.lengthSec) return -1;
+    const projectBpmNow = s.projectBpm > 0 ? s.projectBpm : 120;
+    const stepDur = 60 / projectBpmNow / 4;
+    const absStep = Math.floor((t - selectedClip.startSec) / Math.max(stepDur, 1e-6));
+    return absStep % selectedClip.patternSteps;
+  });
+
   // Default clip length = 8 bars at the current project BPM. Long enough
   // to drop in as a section; pattern loops inside via the scheduler. Drag
   // the right edge to resize.
@@ -233,6 +246,7 @@ export default function DrumRackPanel({ projectId }: { projectId: string }) {
             patternSteps={patternSteps}
             steps={selectedClip?.steps[rowIdx] ?? null}
             clipSelected={!!selectedClip}
+            currentStepIdx={currentStepIdx}
             onDrop={(source) => loadIntoRow(row.id, source)}
             onToggleStep={(idx) => selectedClip && toggleStep(selectedClip.id, rowIdx, idx)}
             onSetVolume={(v) => setRowVolume(row.id, v)}
@@ -252,12 +266,13 @@ export default function DrumRackPanel({ projectId }: { projectId: string }) {
 
 // ── Single row ───────────────────────────────────────────────────────────
 
-function DrumRowItem({ row, patternSteps, steps, clipSelected, onDrop, onToggleStep, onSetVolume, onToggleMuted, onRemove }: {
+function DrumRowItem({ row, patternSteps, steps, clipSelected, currentStepIdx, onDrop, onToggleStep, onSetVolume, onToggleMuted, onRemove }: {
   row: DrumRow;
   rowIdx: number;
   patternSteps: number;
   steps: boolean[] | null;
   clipSelected: boolean;
+  currentStepIdx: number;
   onDrop: (source: { kind: 'os'; file: File } | { kind: 'library'; id: string; name: string } | { kind: 'projectFile'; id: string; name: string }) => void;
   onToggleStep: (idx: number) => void;
   onSetVolume: (v: number) => void;
@@ -351,17 +366,29 @@ function DrumRowItem({ row, patternSteps, steps, clipSelected, onDrop, onToggleS
         {Array.from({ length: patternSteps }).map((_, i) => {
           const on = !!steps?.[i];
           const beatStart = i % 4 === 0;
+          const playing = i === currentStepIdx;
+          // "On" cells flash bright when the playhead crosses them.
+          // Empty cells get a soft column highlight so you can still see
+          // where the playhead is even on rows with no hits.
+          const bg = on
+            ? (playing ? 'hsl(165, 95%, 70%)' : 'hsl(165, 70%, 45%)')
+            : (playing
+                ? 'rgba(0, 255, 200, 0.18)'
+                : beatStart ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.04)');
+          const glow = on && playing
+            ? '0 0 14px hsla(165, 95%, 70%, 0.85), inset 0 1px 0 rgba(255,255,255,0.5)'
+            : on
+              ? 'inset 0 1px 0 rgba(255,255,255,0.25), inset 0 -1px 0 rgba(0,0,0,0.25)'
+              : undefined;
           return (
             <button
               key={i}
               onClick={() => clipSelected && onToggleStep(i)}
               disabled={!clipSelected}
-              className="flex-1 h-6 rounded-sm transition-colors disabled:cursor-not-allowed"
+              className="flex-1 h-6 rounded-sm transition-[background,box-shadow] duration-75 disabled:cursor-not-allowed"
               style={{
-                background: on
-                  ? `hsl(165, 70%, 45%)`
-                  : beatStart ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.04)',
-                boxShadow: on ? 'inset 0 1px 0 rgba(255,255,255,0.25), inset 0 -1px 0 rgba(0,0,0,0.25)' : undefined,
+                background: bg,
+                boxShadow: glow,
                 opacity: clipSelected ? 1 : 0.4,
               }}
               title={clipSelected ? `Step ${i + 1}` : 'Select a clip first'}
