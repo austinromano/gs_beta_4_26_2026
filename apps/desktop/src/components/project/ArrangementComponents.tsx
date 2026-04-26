@@ -739,6 +739,8 @@ function DrumRackLanes({ laneHeight }: { laneHeight: number }) {
   const clips = useDrumRack((s) => s.clips);
   const rows = useDrumRack((s) => s.rows);
   const selectedClipId = useDrumRack((s) => s.selectedClipId);
+  const expanded = useDrumRack((s) => s.expanded);
+  const setExpanded = useDrumRack((s) => s.setExpanded);
   const selectClip = useDrumRack((s) => s.selectClip);
   const createClipAt = useDrumRack((s) => s.createClipAt);
   const moveClip = useDrumRack((s) => s.moveClip);
@@ -780,9 +782,19 @@ function DrumRackLanes({ laneHeight }: { laneHeight: number }) {
 
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex" style={{ height: laneHeight }}>
-        <div data-track-header className="h-full flex shrink-0">
+      <div className="flex relative" style={{ height: laneHeight }}>
+        <div data-track-header className="h-full flex shrink-0 relative">
           <TrackHeader name="Drum Rack" hue={hue} trackIds={[]} />
+          {/* Expand / collapse toggle — opens per-row sub-lanes below. */}
+          <button
+            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+            className="absolute left-1 bottom-1 w-4 h-4 rounded flex items-center justify-center bg-black/30 hover:bg-black/50 text-white/85 transition-colors z-10"
+            title={expanded ? 'Collapse drum lanes' : 'Expand drum lanes — show one lane per row'}
+          >
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 120ms' }}>
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
         </div>
         <div
           ref={laneRef}
@@ -815,6 +827,76 @@ function DrumRackLanes({ laneHeight }: { laneHeight: number }) {
             />
           ))}
         </div>
+      </div>
+
+      {expanded && rows.map((row, rowIdx) => (
+        <DrumRowLane
+          key={row.id}
+          row={row}
+          rowIdx={rowIdx}
+          rowHue={(270 + rowIdx * 35) % 360}
+          clips={clips}
+          arrangementDur={arrangementDur}
+          stepDur={stepDur}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* Per-row sub-lane shown when the drum rack is expanded. Renders only
+   the hits for this single row across every clip — the kick lane shows
+   kick hits, the snare lane shows snare hits, etc. Read-only for now;
+   editing happens in the rack panel below. */
+function DrumRowLane({ row, rowIdx, rowHue, clips, arrangementDur, stepDur }: {
+  row: { id: string; name: string; muted: boolean };
+  rowIdx: number;
+  rowHue: number;
+  clips: Array<{ id: string; startSec: number; lengthSec: number; patternSteps: number; steps: boolean[][] }>;
+  arrangementDur: number;
+  stepDur: number;
+}) {
+  const subLaneHeight = 24;
+  return (
+    <div className="flex" style={{ height: subLaneHeight }}>
+      <div data-track-header className="h-full flex shrink-0">
+        <TrackHeader name={row.name && row.name !== 'Empty' ? row.name : `Row ${rowIdx + 1}`} hue={rowHue} trackIds={[]} />
+      </div>
+      <div
+        className="relative rounded-r-lg flex-1"
+        style={{
+          background: 'rgba(10,4,18,0.3)',
+          borderBottom: '1px solid rgba(255,255,255,0.03)',
+          opacity: row.muted ? 0.4 : 1,
+        }}
+      >
+        {clips.map((clip) => {
+          const totalSteps = Math.max(1, Math.round(clip.lengthSec / Math.max(stepDur, 1e-6)));
+          const rowSteps = clip.steps[rowIdx] || [];
+          return (
+            <div key={clip.id}>
+              {Array.from({ length: totalSteps }).map((_, sIdx) => {
+                if (!rowSteps[sIdx % clip.patternSteps]) return null;
+                const hitTime = clip.startSec + sIdx * stepDur;
+                if (hitTime >= arrangementDur) return null;
+                const leftPct = (hitTime / arrangementDur) * 100;
+                const widthPct = (stepDur / arrangementDur) * 100;
+                return (
+                  <div
+                    key={sIdx}
+                    className="absolute top-1 bottom-1 rounded-sm"
+                    style={{
+                      left: `${leftPct}%`,
+                      width: `${Math.max(0.25, widthPct - 0.05)}%`,
+                      background: `hsl(${rowHue}, 70%, 60%)`,
+                      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.25), 0 1px 2px rgba(0,0,0,0.4)',
+                    }}
+                  />
+                );
+              })}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

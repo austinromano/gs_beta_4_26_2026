@@ -40,11 +40,16 @@ export interface DrumClip {
 
 interface DrumRackState {
   open: boolean;
+  // Expand the drum-rack lane in the arrangement so each row gets its
+  // own sub-lane showing just that row's hits. Pure UI state — not
+  // persisted, not synced.
+  expanded: boolean;
   rows: DrumRow[];
   clips: DrumClip[];
   selectedClipId: string | null;
 
   setOpen: (v: boolean) => void;
+  setExpanded: (v: boolean) => void;
 
   // Row-level (samples / mix)
   addEmptyRow: () => void;
@@ -132,11 +137,13 @@ function emptySteps(rowCount: number, patternSteps: number): boolean[][] {
 
 export const useDrumRack = create<DrumRackState>((set, get) => ({
   open: false,
+  expanded: false,
   rows: [makeRow(), makeRow(), makeRow(), makeRow()],
   clips: [],
   selectedClipId: null,
 
   setOpen: (v) => set({ open: v }),
+  setExpanded: (v) => set({ expanded: v }),
 
   addEmptyRow: () => set((s) => ({
     rows: [...s.rows, makeRow()],
