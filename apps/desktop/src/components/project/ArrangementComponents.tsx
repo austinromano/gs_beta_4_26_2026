@@ -658,7 +658,7 @@ function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth,
       data-clip-id={track.id}
       onPointerDown={handlePointerDown}
       onContextMenu={handleContextMenu}
-      className={`absolute top-1 bottom-1 group rounded-lg overflow-hidden ${haveTime && !remoteDrag ? 'cursor-grab active:cursor-grabbing' : ''} ${remoteDrag ? 'cursor-not-allowed' : ''}`}
+      className={`absolute top-1 bottom-1 group rounded-lg ${isSelected && !remoteDrag ? 'overflow-visible' : 'overflow-hidden'} ${haveTime && !remoteDrag ? 'cursor-grab active:cursor-grabbing' : ''} ${remoteDrag ? 'cursor-not-allowed' : ''}`}
       style={{
         left: `${leftPct}%`,
         width: `${clipWidth}%`,
@@ -680,6 +680,7 @@ function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth,
         projectId={selectedProjectId}
         trackId={track.id}
         showPlayhead={true}
+        showTrimHandles={isSelected && !remoteDrag}
       />
       {/* Track name only — uploader avatar moved to the right-click context
           menu so the clip stays clean. */}

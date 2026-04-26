@@ -183,8 +183,10 @@ export default memo(function Waveform({
     return () => obs.disconnect();
   }, [draw]);
 
-  // Trim handle dragging
-  const handleMouseDown = useCallback((handle: 'start' | 'end') => (e: React.MouseEvent) => {
+  // Trim handle dragging. Uses pointer events (not mouse events) so
+  // stopPropagation actually prevents the parent clip's onPointerDown move-drag
+  // from firing — both events would otherwise fire on the same click.
+  const handlePointerDownOnHandle = useCallback((handle: 'start' | 'end') => (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDraggingHandle(handle);
@@ -195,7 +197,7 @@ export default memo(function Waveform({
 
     const container = containerRef.current;
 
-    const onMouseMove = (e: MouseEvent) => {
+    const onPointerMove = (e: PointerEvent) => {
       const rect = container.getBoundingClientRect();
       const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
       const rawTime = ratio * bufferDuration;
@@ -210,7 +212,7 @@ export default memo(function Waveform({
       }
     };
 
-    const onMouseUp = () => {
+    const onPointerUp = () => {
       // Snap to nearest bar on release
       if (trackId) {
         const grid = useAudioStore.getState().gridDivision;
@@ -218,15 +220,18 @@ export default memo(function Waveform({
         const rawEnd = useAudioStore.getState().loadedTracks.get(trackId)?.trimEnd ?? 0;
         const snappedEnd = rawEnd > 0 ? snapToGrid(rawEnd, bpm, grid, 'nearest') : 0;
         setTrackTrim(trackId, Math.max(0, snappedStart), snappedEnd);
+        // Persist trim through arrangement save (same hook every other
+        // clip mutation uses) so it survives a reload and reaches the server.
+        window.dispatchEvent(new CustomEvent('ghost-save-arrangement'));
       }
       setDraggingHandle(null);
     };
 
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
     return () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
     };
   }, [draggingHandle, trackId, bufferDuration, bpm, trimStart, trimEnd, setTrackTrim]);
 
@@ -327,7 +332,7 @@ export default memo(function Waveform({
           <div
             className="absolute top-0 bottom-0 cursor-col-resize z-20"
             style={{ left: `calc(${trimStartPct}% - 18px)`, width: 20 }}
-            onMouseDown={handleMouseDown('start')}
+            onPointerDown={handlePointerDownOnHandle('start')}
           >
             <div
               className="absolute right-0 top-[4px] bottom-[4px] flex items-center justify-center transition-shadow"
@@ -351,7 +356,7 @@ export default memo(function Waveform({
           <div
             className="absolute top-0 bottom-0 cursor-col-resize z-20"
             style={{ left: `calc(${trimEndPct}% - 2px)`, width: 20 }}
-            onMouseDown={handleMouseDown('end')}
+            onPointerDown={handlePointerDownOnHandle('end')}
           >
             <div
               className="absolute left-0 top-[4px] bottom-[4px] flex items-center justify-center transition-shadow"
