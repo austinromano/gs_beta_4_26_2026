@@ -424,29 +424,31 @@ function TrimHandle<S>({ edge, onDragStart, onDrag, onDragEnd }: {
   const edgeStyle: React.CSSProperties = isStart ? { left: 0 } : { right: 0 };
   return (
     <div
+      data-trim-handle={edge}
       onPointerDown={onPointerDown}
       className="absolute top-0 bottom-0 z-20 cursor-ew-resize"
-      style={{ ...edgeStyle, width: 12 }}
+      style={{ ...edgeStyle, width: 16 }}
     >
       <div
-        className="absolute top-[3px] bottom-[3px] pointer-events-none transition-[background,box-shadow,width] duration-100"
+        data-trim-handle={edge}
+        className="absolute top-[2px] bottom-[2px] pointer-events-none transition-[background,box-shadow,width] duration-100"
         style={{
           ...edgeStyle,
-          width: dragging ? 6 : 4,
+          width: dragging ? 9 : 7,
           background: dragging
             ? 'linear-gradient(180deg, #FFE066 0%, #E6AC00 100%)'
-            : 'linear-gradient(180deg, rgba(245,197,24,0.9) 0%, rgba(212,160,23,0.9) 100%)',
-          borderRadius: isStart ? '3px 0 0 3px' : '0 3px 3px 0',
+            : 'linear-gradient(180deg, rgba(245,197,24,0.95) 0%, rgba(212,160,23,0.95) 100%)',
+          borderRadius: isStart ? '4px 0 0 4px' : '0 4px 4px 0',
           boxShadow: dragging
-            ? '0 0 12px rgba(245,197,24,0.7)'
-            : '0 0 4px rgba(245,197,24,0.35)',
+            ? '0 0 14px rgba(245,197,24,0.8), inset 0 0 0 1px rgba(255,224,102,0.6)'
+            : '0 0 6px rgba(245,197,24,0.45), inset 0 0 0 1px rgba(255,224,102,0.3)',
         }}
       >
-        {/* Centered grip — two short horizontal dashes to signal "drag me". */}
+        {/* Centered grip — three short horizontal dashes to signal "drag me". */}
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col gap-[2px]">
-          <div style={{ width: 2, height: 1.5, background: 'rgba(0,0,0,0.55)', borderRadius: 1 }} />
-          <div style={{ width: 2, height: 1.5, background: 'rgba(0,0,0,0.55)', borderRadius: 1 }} />
-          <div style={{ width: 2, height: 1.5, background: 'rgba(0,0,0,0.55)', borderRadius: 1 }} />
+          <div style={{ width: 3, height: 1.5, background: 'rgba(0,0,0,0.55)', borderRadius: 1 }} />
+          <div style={{ width: 3, height: 1.5, background: 'rgba(0,0,0,0.55)', borderRadius: 1 }} />
+          <div style={{ width: 3, height: 1.5, background: 'rgba(0,0,0,0.55)', borderRadius: 1 }} />
         </div>
       </div>
     </div>
@@ -617,6 +619,10 @@ function LaneClip({ track, selectedProjectId, deleteTrack, trackZoom, laneWidth,
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest('button')) return;
+    // Trim handles stop propagation themselves, but a defensive check by
+    // data attribute means we won't accidentally start a clip move-drag if
+    // any future code path slips past stopPropagation.
+    if ((e.target as HTMLElement).closest('[data-trim-handle]')) return;
     if (!haveTime) return;
     // Conflict guard: someone else is already dragging this clip.
     if (remoteDrag) return;
