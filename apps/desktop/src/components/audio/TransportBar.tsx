@@ -49,6 +49,7 @@ export default function TransportBar({ tracks, projectId, projectTempo, onTempoC
   const play = useAudioStore((s) => s.play);
   const pause = useAudioStore((s) => s.pause);
   const seekTo = useAudioStore((s) => s.seekTo);
+  const gridDivision = useAudioStore((s) => s.gridDivision);
   const loadTrackFromBuffer = useAudioStore((s) => s.loadTrackFromBuffer);
   const setProjectBpm = useAudioStore((s) => s.setProjectBpm);
   const currentProject = useProjectStore((s) => s.currentProject);
@@ -508,18 +509,26 @@ export default function TransportBar({ tracks, projectId, projectTempo, onTempoC
     else play();
   };
 
+  // Snap the playhead to the active grid subdivision so click + drag on
+  // the seek bar lands on the same grid lines the arrangement uses.
+  const snapPlayhead = (raw: number) => {
+    if (gridDivision <= 0) return raw;
+    const bpm = projectBpm > 0 ? projectBpm : 120;
+    return Math.max(0, Math.min(duration, snapToGrid(raw, bpm, gridDivision, 'nearest')));
+  };
+
   const handleSeekClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (duration <= 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    seekTo(ratio * duration);
+    seekTo(snapPlayhead(ratio * duration));
   };
 
   const handleSeekDrag = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!dragging || duration <= 0 || !seekBarRef.current) return;
     const rect = seekBarRef.current.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    seekTo(ratio * duration);
+    seekTo(snapPlayhead(ratio * duration));
   };
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;

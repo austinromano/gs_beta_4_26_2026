@@ -243,8 +243,9 @@ export function useArrangement() {
 }
 
 export function BarRuler() {
-  const { numBars, arrangementDur } = useArrangement();
+  const { numBars, arrangementDur, bpm } = useArrangement();
   const seekTo = useAudioStore((s) => s.seekTo);
+  const gridDivision = useAudioStore((s) => s.gridDivision);
   // Thin the label density as bar count grows so text doesn't crowd.
   const step = numBars <= 24 ? 2 : numBars <= 48 ? 4 : numBars <= 96 ? 8 : 16;
 
@@ -252,7 +253,13 @@ export function BarRuler() {
     if (arrangementDur <= 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    seekTo(ratio * arrangementDur);
+    const raw = ratio * arrangementDur;
+    // Snap the playhead to the active grid subdivision (Bar / 1/2 / 1/4
+    // / 1/8 / 1/16). gridDivision = 0 means free movement; pass through.
+    const snapped = gridDivision > 0
+      ? Math.max(0, Math.min(arrangementDur, snapToGrid(raw, bpm, gridDivision, 'nearest')))
+      : raw;
+    seekTo(snapped);
   };
 
   return (
