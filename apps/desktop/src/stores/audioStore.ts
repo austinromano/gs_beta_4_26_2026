@@ -816,7 +816,9 @@ export const useAudioStore = create<AudioState>((set, get) => {
 
     buildArrangementState: (serverTrackFileIds) => {
       const clips: any[] = [];
+      const seen = new Set<string>();
       get().loadedTracks.forEach((track, id) => {
+        seen.add(id);
         const isChild = id.includes('_split_') || id.includes('_dup_');
         const parentId = isChild ? id.split(/_split_|_dup_/)[0] : undefined;
         clips.push({
@@ -832,6 +834,27 @@ export const useAudioStore = create<AudioState>((set, get) => {
           warp: track.warp,
           parentTrackId: parentId,
           parentFileId: parentId ? serverTrackFileIds.get(parentId) : undefined,
+        });
+      });
+      // Include pending duplicates / pastes that haven't loaded into the
+      // audio store yet. Without this, an auto-save firing right after a
+      // Duplicate would persist the arrangement WITHOUT the new clip's
+      // mix state — and the user's BPM override / warp choice would be
+      // gone after a refresh.
+      pendingTrackOffsets.forEach((startOffset, trackId) => {
+        if (seen.has(trackId)) return;
+        const props = pendingTrackProps.get(trackId);
+        clips.push({
+          trackId,
+          trimStart: props?.trimStart ?? 0,
+          trimEnd: props?.trimEnd ?? 0,
+          startOffset,
+          volume: props?.volume ?? 1,
+          muted: props?.muted ?? false,
+          soloed: props?.soloed ?? false,
+          pitch: props?.pitch ?? 0,
+          bpm: props?.bpm,
+          warp: props?.warp,
         });
       });
       // Carry the user's vertical lane order so every collaborator's
