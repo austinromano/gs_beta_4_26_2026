@@ -517,7 +517,34 @@ export const useAudioStore = create<AudioState>((set, get) => {
 
     setProjectBpm: (bpm) => {
       const { projectBpm: prev } = get();
+      const ratio = (prev > 0 && bpm > 0) ? prev / bpm : 1;
       set({ projectBpm: bpm });
+      // BAR-LOCK every clip's timeline position so a tempo change feels
+      // like the project changed speed instead of like every clip slid
+      // around. startOffset (seconds) is multiplied by oldBpm/newBpm so a
+      // clip that sat on bar 9 stays on bar 9 after the BPM change. Same
+      // for trimStart/trimEnd of warped tracks: their playback buffer is
+      // about to be re-stretched to the new tempo, so the trim positions
+      // (in buffer seconds) need to scale to keep pointing at the same
+      // musical positions in the source.
+      if (Math.abs(ratio - 1) > 1e-6) {
+        const { loadedTracks } = get();
+        const m = new Map(loadedTracks);
+        m.forEach((t, id) => {
+          const next = { ...t, startOffset: t.startOffset * ratio };
+          if (t.warp !== false) {
+            next.trimStart = t.trimStart * ratio;
+            next.trimEnd = t.trimEnd * ratio;
+          }
+          m.set(id, next);
+        });
+        set({ loadedTracks: m });
+        // Drum rack lives in a sibling store. Dispatch instead of import
+        // to avoid the audioStore → drumRackStore circular dep.
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ghost-bpm-rescale', { detail: { ratio } }));
+        }
+      }
       // Re-stretch every loaded track from its original buffer so samples
       // stay locked to the new grid. Skip when the change is negligible.
       if (prev > 0 && Math.abs(prev - bpm) > 0.1) {

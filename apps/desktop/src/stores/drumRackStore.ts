@@ -436,6 +436,25 @@ export const useDrumRack = create<DrumRackState>((set, get) => ({
   },
 }));
 
+// Bar-lock drum clip positions when the project tempo changes. The
+// audioStore's setProjectBpm dispatches `ghost-bpm-rescale` with the
+// ratio (oldBpm / newBpm); we scale every clip's startSec + lengthSec
+// by it so the pattern blocks stay on the same bars after the tempo
+// change instead of sliding around in seconds.
+if (typeof window !== 'undefined') {
+  window.addEventListener('ghost-bpm-rescale', ((e: CustomEvent) => {
+    const ratio = e.detail?.ratio;
+    if (!ratio || Math.abs(ratio - 1) < 1e-6) return;
+    useDrumRack.setState((s) => ({
+      clips: s.clips.map((c) => ({
+        ...c,
+        startSec: c.startSec * ratio,
+        lengthSec: c.lengthSec * ratio,
+      })),
+    }));
+  }) as EventListener);
+}
+
 // On every state change: persist locally AND broadcast to the room.
 // Skipped during initial hydration so we don't overwrite saved state
 // with empty defaults; skipped while applying a remote snapshot so we
