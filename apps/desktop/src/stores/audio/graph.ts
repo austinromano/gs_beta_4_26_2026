@@ -37,7 +37,16 @@ function init() {
   mixerBus.gain.value = 1;
 
   masterGain = audioCtx.createGain();
-  masterGain.gain.value = 1;
+  // Restore the user's persisted master fader value before any source
+  // has connected — otherwise the first frame would always play at unity
+  // and the slider would visibly snap into place a tick later.
+  let savedMaster = 1;
+  try {
+    const raw = (typeof localStorage !== 'undefined') ? localStorage.getItem('ghost_master_volume') : null;
+    const v = raw ? parseFloat(raw) : NaN;
+    if (isFinite(v) && v >= 0 && v <= 1.5) savedMaster = v;
+  } catch { /* default unity */ }
+  masterGain.gain.value = savedMaster;
 
   masterAnalyser = audioCtx.createAnalyser();
   masterAnalyser.fftSize = FFT_SIZE;

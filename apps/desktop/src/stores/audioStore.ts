@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { api } from '../lib/api';
 import { PITCH_MIN, PITCH_MAX } from '../lib/constants';
 import { audioBufferCache, cacheBuffer, clearAudioCaches } from '../lib/audio';
-import { getCtx, getMaster, getAnalyser as getAnalyserNode, safeStop } from './audio/graph';
+import { getCtx, getMaster, getMasterFader, getAnalyser as getAnalyserNode, safeStop } from './audio/graph';
 import { save as saveArrangement, load as loadArrangement } from './audio/arrangement';
 import { cloneBuffer, loopBufferToLength, splitBufferAt } from './audio/bufferOps';
 import type { LoadedTrack, UndoSnapshot } from './audio/types';
@@ -140,6 +140,11 @@ interface AudioState {
   currentTime: number;
   duration: number;
   projectBpm: number;
+  // Master fader gain (0..1.5). Applied to the masterGain node in graph.ts
+  // and persisted globally so the user's mix level survives across
+  // projects and sessions.
+  masterVolume: number;
+  setMasterVolume: (v: number) => void;
   canUndo: boolean;
   canRedo: boolean;
   bufferVersion: number;
@@ -380,6 +385,25 @@ export const useAudioStore = create<AudioState>((set, get) => {
     currentTime: 0,
     duration: 0,
     projectBpm: 0,
+    masterVolume: (() => {
+      try {
+        const raw = window.localStorage?.getItem('ghost_master_volume');
+        const v = raw ? parseFloat(raw) : NaN;
+        return isFinite(v) && v >= 0 && v <= 1.5 ? v : 1;
+      } catch { return 1; }
+    })(),
+    setMasterVolume: (v) => {
+      const clamped = Math.max(0, Math.min(1.5, v));
+      const fader = getMasterFader();
+      // Smooth the gain change so the slider doesn't zipper. 30 ms ramp
+      // is below the perception threshold but still removes the artifact.
+      try {
+        fader.gain.cancelScheduledValues(getCtx().currentTime);
+        fader.gain.linearRampToValueAtTime(clamped, getCtx().currentTime + 0.03);
+      } catch { fader.gain.value = clamped; }
+      try { window.localStorage?.setItem('ghost_master_volume', String(clamped)); } catch {}
+      set({ masterVolume: clamped });
+    },
     canUndo: false,
     canRedo: false,
     bufferVersion: 0,
