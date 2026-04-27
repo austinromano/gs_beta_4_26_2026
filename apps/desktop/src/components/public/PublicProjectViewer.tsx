@@ -226,9 +226,33 @@ export default function PublicProjectViewer({ token }: { token: string }) {
             {audioTracks.length === 0 && (
               <div className="px-4 py-10 text-center text-white/40 text-sm">No audio tracks in this project yet.</div>
             )}
-            {audioTracks.map((t: any, idx: number) => (
-              <ViewerLane key={t.id} track={t} colourIdx={idx} />
-            ))}
+            {(() => {
+              // Group tracks by fileId so multiple clips of the same source
+              // sample (duplicates, splits, copy-pastes) land on the SAME
+              // lane like they do in the editor — instead of stacking up as
+              // a separate row each. Lanes ordered by earliest clip start
+              // so the listener reads the song top-down in time.
+              const byFileId = new Map<string, any[]>();
+              for (const t of audioTracks) {
+                const fid = t.fileId as string;
+                if (!byFileId.has(fid)) byFileId.set(fid, []);
+                byFileId.get(fid)!.push(t);
+              }
+              const groups = Array.from(byFileId.values());
+              const groupEarliestStart = (g: any[]) => {
+                const store = useAudioStore.getState();
+                let min = Infinity;
+                for (const t of g) {
+                  const off = store.loadedTracks.get(t.id)?.startOffset ?? Infinity;
+                  if (off < min) min = off;
+                }
+                return isFinite(min) ? min : 0;
+              };
+              groups.sort((a, b) => groupEarliestStart(a) - groupEarliestStart(b));
+              return groups.map((g, idx) => (
+                <ViewerLane key={g[0].fileId} clips={g} colourIdx={idx} />
+              ));
+            })()}
             <PublicDrumRackLanes />
             <BarGridOverlay />
             <ArrangementPlayhead />
@@ -370,67 +394,82 @@ function PublicDrumRackLanes() {
   );
 }
 
-// Per-track lane. Mirrors the editor's LaneRow layout: a fixed-width
-// header column with name + colour dot, then the relative clip area where
-// a single Waveform clip is positioned absolutely by startOffset.
-function ViewerLane({ track, colourIdx }: { track: any; colourIdx: number }) {
+// One lane per fileId. Multiple clips that share the same source sample
+// are rendered as multiple positioned blocks INSIDE the same lane row,
+// matching the editor's "lanes group by fileId" semantic — that's why
+// duplicating a clip in the editor stays in the same lane instead of
+// adding a new row.
+function ViewerLane({ clips, colourIdx }: { clips: any[]; colourIdx: number }) {
   const { arrangementDur } = useArrangement();
-  const loaded = useAudioStore((s) => s.loadedTracks.get(track.id));
+  // Editor lane palette. Hashed off fileId so duplicates of the same source
+  // keep the same hue across reloads.
+  const palette = ['#A855F7', '#00FFC8', '#3B82F6', '#EC4899', '#F59E0B', '#10B981', '#8B5CF6'];
+  const colour = palette[colourIdx % palette.length];
 
+  const first = clips[0];
+  const displayName = (first.name || 'Track')
+    .replace(/\.(wav|mp3|flac|aiff|ogg|m4a)$/i, '')
+    .replace(/_/g, ' ');
+
+  return (
+    <div className="flex items-stretch border-b border-white/[0.04] last:border-b-0" style={{ height: 40 }}>
+      <div
+        style={{ width: TRACK_HEADER_WIDTH }}
+        className="shrink-0 relative border-r border-white/[0.04] flex items-center"
+      >
+        {/* Left identity stripe — same place the editor renders its lane
+            colour. Vertical gradient so the lane reads at a glance even
+            when the name is truncated. */}
+        <div
+          className="absolute left-0 top-0 bottom-0"
+          style={{ width: 4, background: `linear-gradient(180deg, ${colour}, ${colour}99)`, boxShadow: `0 0 8px ${colour}40` }}
+        />
+        <div className="pl-3 pr-2 min-w-0 flex-1">
+          <div className="text-white text-[11px] font-semibold truncate leading-tight">{displayName}</div>
+          <div className="text-white/40 text-[9px] uppercase tracking-wider truncate">{first.type || 'audio'}</div>
+        </div>
+      </div>
+      <div className="flex-1 relative">
+        {clips.map((clip) => (
+          <ClipBlock key={clip.id} track={clip} arrangementDur={arrangementDur} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Single positioned waveform block inside a lane. Reads its own clip's
+// trim/offset from the audio store (every clip is its own track-id even
+// when fileId is shared with siblings).
+function ClipBlock({ track, arrangementDur }: { track: any; arrangementDur: number }) {
+  const loaded = useAudioStore((s) => s.loadedTracks.get(track.id));
   const playbackRate = loaded ? Math.pow(2, (loaded.pitch || 0) / 12) : 1;
   const bufferDuration = loaded?.buffer?.duration ?? 0;
   const trimStart = loaded?.trimStart ?? 0;
   const trimEnd = (loaded?.trimEnd ?? 0) > 0 ? loaded!.trimEnd : bufferDuration;
   const startOffset = loaded?.startOffset ?? 0;
   const clipDur = bufferDuration > 0 ? Math.max(0, (trimEnd - trimStart) / Math.max(0.0001, playbackRate)) : 0;
-
-  const haveTime = clipDur > 0 && arrangementDur > 0;
-  const leftPct = haveTime ? (startOffset / arrangementDur) * 100 : 0;
-  const widthPct = haveTime ? (clipDur / arrangementDur) * 100 : 0;
-
-  // Same colour-dot palette the editor uses to give each lane an identity
-  // even when names are truncated. Looped so any track count works.
-  const dotPalette = ['#A855F7', '#00FFC8', '#3B82F6', '#EC4899', '#F59E0B', '#10B981', '#8B5CF6'];
-  const dot = dotPalette[colourIdx % dotPalette.length];
-
-  const displayName = (track.name || 'Track')
-    .replace(/\.(wav|mp3|flac|aiff|ogg|m4a)$/i, '')
-    .replace(/_/g, ' ');
-
+  if (clipDur <= 0 || arrangementDur <= 0) return null;
+  const leftPct = (startOffset / arrangementDur) * 100;
+  const widthPct = (clipDur / arrangementDur) * 100;
   return (
-    <div className="flex items-stretch border-b border-white/[0.04] last:border-b-0" style={{ height: 56 }}>
-      <div
-        style={{ width: TRACK_HEADER_WIDTH }}
-        className="shrink-0 px-2 py-1.5 border-r border-white/[0.04] flex items-center gap-2"
-      >
-        <span style={{ background: dot, width: 6, height: 6, borderRadius: 999, flexShrink: 0, boxShadow: `0 0 6px ${dot}80` }} />
-        <div className="min-w-0 flex-1">
-          <div className="text-white text-[11px] font-semibold truncate leading-tight">{displayName}</div>
-          <div className="text-white/40 text-[9px] uppercase tracking-wider truncate">{track.type || 'audio'}</div>
-        </div>
-      </div>
-      <div className="flex-1 relative">
-        {haveTime && (
-          <div
-            className="absolute top-1 bottom-1 rounded-md overflow-hidden"
-            style={{
-              left: `${leftPct}%`,
-              width: `${widthPct}%`,
-              background: '#0A0412',
-              border: '1px solid rgba(255,255,255,0.08)',
-            }}
-          >
-            <Waveform
-              seed={track.name + (track.type || 'audio')}
-              height={52}
-              trackId={track.id}
-              showPlayhead={true}
-              viewStart={trimStart}
-              viewEnd={trimEnd}
-            />
-          </div>
-        )}
-      </div>
+    <div
+      className="absolute top-1 bottom-1 rounded-md overflow-hidden"
+      style={{
+        left: `${leftPct}%`,
+        width: `${widthPct}%`,
+        background: '#0A0412',
+        border: '1px solid rgba(255,255,255,0.08)',
+      }}
+    >
+      <Waveform
+        seed={track.name + (track.type || 'audio')}
+        height={36}
+        trackId={track.id}
+        showPlayhead={true}
+        viewStart={trimStart}
+        viewEnd={trimEnd}
+      />
     </div>
   );
 }
