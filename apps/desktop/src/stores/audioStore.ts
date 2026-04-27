@@ -595,8 +595,12 @@ export const useAudioStore = create<AudioState>((set, get) => {
       if (track.warp !== false && track.originalBuffer && projectBpm > 0 && bpm > 0) {
         if (track.source) safeStop(track.source);
         if (track.gainNode) { try { track.gainNode.disconnect(); } catch { /* ignore */ } }
+        const oldLen = track.buffer.duration;
         const { buffer: nextBuffer } = composePlayBuffer({ ...track, bpm }, projectBpm);
-        m.set(trackId, { ...track, bpm, buffer: nextBuffer, source: null, gainNode: null });
+        // Same trim-rescale story as setTrackPitch — buffer length changes
+        // when the warp factor moves, so trim has to follow it.
+        const ratio = oldLen > 0 ? nextBuffer.duration / oldLen : 1;
+        m.set(trackId, { ...track, bpm, buffer: nextBuffer, trimStart: track.trimStart * ratio, trimEnd: track.trimEnd * ratio, source: null, gainNode: null });
         set({ loadedTracks: m, bufferVersion: get().bufferVersion + 1 });
       } else {
         m.set(trackId, { ...track, bpm });
@@ -617,8 +621,13 @@ export const useAudioStore = create<AudioState>((set, get) => {
       // one stretch.
       if (track.source) safeStop(track.source);
       if (track.gainNode) { try { track.gainNode.disconnect(); } catch { /* ignore */ } }
+      const oldLen = track.buffer.duration;
       const { buffer: nextBuffer } = composePlayBuffer({ ...track, warp }, projectBpm);
-      m.set(trackId, { ...track, warp, buffer: nextBuffer, source: null, gainNode: null });
+      // Toggling warp can flip the buffer length dramatically (warp on +
+      // big BPM mismatch = much longer/shorter buffer). Trim has to scale
+      // by the same ratio.
+      const ratio = oldLen > 0 ? nextBuffer.duration / oldLen : 1;
+      m.set(trackId, { ...track, warp, buffer: nextBuffer, trimStart: track.trimStart * ratio, trimEnd: track.trimEnd * ratio, source: null, gainNode: null });
       set({ loadedTracks: m, bufferVersion: get().bufferVersion + 1 });
       restartIfPlaying();
       window.dispatchEvent(new CustomEvent('ghost-save-arrangement'));
@@ -781,8 +790,18 @@ export const useAudioStore = create<AudioState>((set, get) => {
       // than the warped length and gets played at `playbackRate=pitchFactor`.
       if (track.source) safeStop(track.source);
       if (track.gainNode) { try { track.gainNode.disconnect(); } catch { /* ignore */ } }
+      const oldLen = track.buffer.duration;
       const next = composePlayBuffer({ ...track, pitch }, projectBpm);
-      m.set(trackId, { ...track, pitch, buffer: next.buffer, source: null, gainNode: null });
+      // Scale trim by the buffer-length change. trimStart / trimEnd live in
+      // BUFFER seconds, so when the pre-stretch length changes (e.g. +12
+      // semitones doubles the buffer), the trim points have to scale by
+      // the same ratio or they'd point to the wrong musical position in
+      // the new buffer — and the visual clip width would shrink/grow with
+      // pitch instead of holding steady.
+      const ratio = oldLen > 0 ? next.buffer.duration / oldLen : 1;
+      const trimStart = track.trimStart * ratio;
+      const trimEnd = track.trimEnd * ratio; // 0 means "use full" — stays 0
+      m.set(trackId, { ...track, pitch, buffer: next.buffer, trimStart, trimEnd, source: null, gainNode: null });
       set({ loadedTracks: m, bufferVersion: get().bufferVersion + 1 });
       restartIfPlaying();
       window.dispatchEvent(new CustomEvent('ghost-save-arrangement'));
