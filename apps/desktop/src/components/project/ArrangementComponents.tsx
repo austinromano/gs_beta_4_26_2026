@@ -8,7 +8,8 @@ import { snapToGrid } from '../../lib/audio';
 import { getSocket } from '../../lib/socket';
 import Waveform from '../tracks/Waveform';
 import Avatar from '../common/Avatar';
-import { useDrumRack } from '../../stores/drumRackStore';
+import { useDrumRack, getRowAnalyser } from '../../stores/drumRackStore';
+import { getDrumAnalyser } from '../../stores/audio/graph';
 import { SAMPLE_LIBRARY_DRAG_MIME } from '../layout/SampleLibrarySection';
 
 type Member = { userId: string; displayName: string; avatarUrl: string | null };
@@ -95,7 +96,17 @@ function LaneLevelMeter({ trackIds }: { trackIds: string[] }) {
   );
 }
 
-function TrackHeader({ name, hue, isSelected, trackIds }: { name: string; hue: number; isSelected?: boolean; trackIds: string[] }) {
+function TrackHeader({ name, hue, isSelected, trackIds, meter }: {
+  name: string;
+  hue: number;
+  isSelected?: boolean;
+  trackIds: string[];
+  // Optional override for the level-meter strip on the right edge of
+  // the header. Defaults to LaneLevelMeter (per-track analyser tap).
+  // Pass <DrumRackLevelMeter /> or <DrumRowLevelMeter rowId=… /> for
+  // lanes that aren't backed by per-track analysers.
+  meter?: React.ReactNode;
+}) {
   // Solid block fill (FL Studio playlist style) — saturated colour, full
   // lane height, name across the top, accent dot on the right.
   const fill = `hsl(${hue}, 38%, 30%)`;
@@ -120,9 +131,66 @@ function TrackHeader({ name, hue, isSelected, trackIds }: { name: string; hue: n
         className="shrink-0 w-1.5 h-1.5 rounded-full"
         style={{ background: accent, boxShadow: `0 0 4px ${accent}` }}
       />
-      <LaneLevelMeter trackIds={trackIds} />
+      {meter ?? <LaneLevelMeter trackIds={trackIds} />}
     </div>
   );
+}
+
+/**
+ * Generic level meter that taps any AnalyserNode. Used by the drum-rack
+ * lane (sum of all drum rows via drumAnalyser) and per-row sub-lanes
+ * (individual row analysers tracked in drumRackStore.rowAnalysers).
+ * Mirrors LaneLevelMeter's 4 px VU strip styling so every meter in the
+ * arrangement reads the same.
+ */
+function AnalyserMeter({ getNode }: { getNode: () => AnalyserNode | null }) {
+  const fillRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    let raf = 0;
+    const buf = new Float32Array(256);
+    let lastDisplayed = 0;
+    const tick = () => {
+      const a = getNode();
+      if (a) {
+        a.getFloatTimeDomainData(buf);
+        let peak = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const abs = buf[i] < 0 ? -buf[i] : buf[i];
+          if (abs > peak) peak = abs;
+        }
+        const next = peak > lastDisplayed ? peak : lastDisplayed * 0.85 + peak * 0.15;
+        lastDisplayed = next;
+        if (fillRef.current) fillRef.current.style.height = `${Math.min(100, next * 100)}%`;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [getNode]);
+  return (
+    <div
+      className="relative shrink-0 rounded-sm overflow-hidden"
+      style={{ width: 4, height: '70%', background: 'rgba(0,0,0,0.45)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.06)' }}
+    >
+      <div
+        ref={fillRef}
+        className="absolute bottom-0 left-0 right-0"
+        style={{
+          height: '0%',
+          background: 'linear-gradient(180deg, #ff4d4d 0%, #ffd24d 25%, #4dff8c 60%, #2bd16f 100%)',
+          transition: 'height 0.05s linear',
+        }}
+      />
+    </div>
+  );
+}
+
+function DrumRackLevelMeter() {
+  return <AnalyserMeter getNode={() => getDrumAnalyser()} />;
+}
+
+function DrumRowLevelMeter({ rowId }: { rowId: string }) {
+  return <AnalyserMeter getNode={() => getRowAnalyser(rowId)} />;
 }
 
 /* ── Drop zone for uploading audio files ── */
@@ -1015,7 +1083,7 @@ function DrumRackLanes({ laneHeight }: { laneHeight: number }) {
           }}
           className="h-full flex shrink-0 relative cursor-grab active:cursor-grabbing"
         >
-          <TrackHeader name="Drum Rack" hue={hue} trackIds={[]} />
+          <TrackHeader name="Drum Rack" hue={hue} trackIds={[]} meter={<DrumRackLevelMeter />} />
           {/* Expand / collapse toggle — opens per-row sub-lanes below. */}
           <button
             onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
@@ -1111,7 +1179,7 @@ function DrumRowLane({ row, rowIdx, rowHue, clips, arrangementDur, stepDur, subL
   return (
     <div className="flex" style={{ height: subLaneHeight }}>
       <div data-track-header className="h-full flex shrink-0">
-        <TrackHeader name={row.name && row.name !== 'Empty' ? row.name : `Row ${rowIdx + 1}`} hue={rowHue} trackIds={[]} />
+        <TrackHeader name={row.name && row.name !== 'Empty' ? row.name : `Row ${rowIdx + 1}`} hue={rowHue} trackIds={[]} meter={<DrumRowLevelMeter rowId={row.id} />} />
       </div>
       <div
         className="relative rounded-r-lg flex-1"

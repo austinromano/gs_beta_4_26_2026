@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getCtx, getMaster, safeStop } from './audio/graph';
+import { getCtx, getDrumBus, safeStop } from './audio/graph';
 import { audioBufferCache, getAudioData } from '../lib/audio';
 import { useAudioStore } from './audioStore';
 import { sendSessionAction } from '../lib/socket';
@@ -87,6 +87,15 @@ interface DrumRackState {
 
 let schedulerTimer: ReturnType<typeof setInterval> | null = null;
 const activeSources: Set<AudioBufferSourceNode> = new Set();
+// Per-row AnalyserNode tap. Lives outside the store state because
+// AnalyserNode isn't serialisable (would break network sync if added
+// to DrumRow). Created lazily on first hit, persists for the lifetime
+// of the AudioContext, gets exposed via getRowAnalyser() so the
+// per-row meter can read levels off it.
+const rowAnalysers = new Map<string, AnalyserNode>();
+export function getRowAnalyser(rowId: string): AnalyserNode | null {
+  return rowAnalysers.get(rowId) || null;
+}
 
 // Persistence — rows (without buffer) + clips, keyed by projectId in
 // localStorage. Buffer rehydrated from fileId on load.
@@ -304,12 +313,24 @@ export const useDrumRack = create<DrumRackState>((set, get) => ({
             const row = rows[r];
             if (row.muted || !row.buffer) continue;
             if (!clip.steps[r]?.[stepIdx]) continue;
+            // Lazily create a persistent per-row analyser → drum bus
+            // connection. Every hit on this row routes through that
+            // analyser so the row meter sees its own level, and the
+            // drum bus sees the sum of every row.
+            let rowAnalyser = rowAnalysers.get(row.id);
+            if (!rowAnalyser) {
+              rowAnalyser = ctx.createAnalyser();
+              rowAnalyser.fftSize = 256;
+              rowAnalyser.smoothingTimeConstant = 0.6;
+              rowAnalyser.connect(getDrumBus());
+              rowAnalysers.set(row.id, rowAnalyser);
+            }
             const src = ctx.createBufferSource();
             src.buffer = row.buffer;
             const g = ctx.createGain();
             g.gain.value = row.volume;
             src.connect(g);
-            g.connect(getMaster());
+            g.connect(rowAnalyser);
             const when = ctxNow + (stepProjectTime - audio.currentTime);
             src.start(Math.max(ctxNow, when));
             activeSources.add(src);

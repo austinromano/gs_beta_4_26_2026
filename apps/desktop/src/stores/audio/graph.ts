@@ -25,6 +25,11 @@ let audioCtx: AudioContext | null = null;
 let mixerBus: GainNode | null = null;
 let masterGain: GainNode | null = null;
 let masterAnalyser: AnalyserNode | null = null;
+// Drum sub-bus: every drum row sums into here, then drumBus → mixerBus.
+// Lets the Drum Rack lane meter tap the SUM of all drum hits in
+// parallel without affecting the audio path.
+let drumBus: GainNode | null = null;
+let drumAnalyser: AnalyserNode | null = null;
 
 function init() {
   // `latencyHint: 'playback'` lets the browser allocate larger buffers and
@@ -52,12 +57,20 @@ function init() {
   masterAnalyser.fftSize = FFT_SIZE;
   masterAnalyser.smoothingTimeConstant = SMOOTHING_TIME_CONSTANT;
 
+  drumBus = audioCtx.createGain();
+  drumBus.gain.value = 1;
+  drumAnalyser = audioCtx.createAnalyser();
+  drumAnalyser.fftSize = FFT_SIZE;
+  drumAnalyser.smoothingTimeConstant = SMOOTHING_TIME_CONSTANT;
+
   // Audio path — kept as short as possible.
+  drumBus.connect(mixerBus);
   mixerBus.connect(masterGain);
   masterGain.connect(audioCtx.destination);
 
-  // Parallel branch — meter only. Crucially does NOT connect to anything
-  // downstream, so it's a passive observer of the master signal.
+  // Parallel meter branches — each connects to an analyser that does NOT
+  // chain on, so they're passive observers of the bus they tap.
+  drumBus.connect(drumAnalyser);
   masterGain.connect(masterAnalyser);
 }
 
@@ -81,6 +94,21 @@ export function getMaster(): GainNode {
 export function getMasterFader(): GainNode {
   if (!masterGain) init();
   return masterGain!;
+}
+
+/**
+ * Drum sub-bus. Drum row buffer sources connect their per-row gain →
+ * per-row analyser → drumBus, so the drum-rack-lane meter sees the SUM
+ * of every row through `getDrumAnalyser()`.
+ */
+export function getDrumBus(): GainNode {
+  if (!drumBus) init();
+  return drumBus!;
+}
+
+export function getDrumAnalyser(): AnalyserNode {
+  if (!drumAnalyser) init();
+  return drumAnalyser!;
 }
 
 export function getAnalyser(): AnalyserNode {
