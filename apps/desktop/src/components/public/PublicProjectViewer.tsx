@@ -139,6 +139,16 @@ export default function PublicProjectViewer({ token }: { token: string }) {
     else audioStore.play();
   };
 
+  // Drum-rack scheduler — same pattern DrumRackPanel uses in the editor.
+  // Without this the drum lanes render but stay silent because nothing's
+  // queueing the per-step buffer sources against the audio context.
+  useEffect(() => {
+    const drum = useDrumRack.getState();
+    if (isPlaying) drum.startScheduler(token);
+    else drum.stopScheduler();
+    return () => { useDrumRack.getState().stopScheduler(); };
+  }, [isPlaying, token]);
+
   const fmtTime = (s: number) => {
     if (!isFinite(s)) return '0:00';
     const m = Math.floor(s / 60);
